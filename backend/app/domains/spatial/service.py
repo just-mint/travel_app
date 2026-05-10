@@ -12,13 +12,104 @@ from sklearn.cluster import KMeans
 from sqlalchemy import cast
 from geoalchemy2.types import Geography
 
+def search_places_omnisearch(db: Session, query_text: str, user_lat: float = None, user_lon: float = None):
+    if not query_text or len(query_text) < 2:
+        return []
+    
+    # --- COMPOSITE RANKING ALGORITHM ---
+    # Trọng số: 40% Độ khớp tên | 40% Khoảng cách gần | 20% Đánh giá
+    W_SIMILARITY = 0.4
+    W_DISTANCE = 0.4
+    W_RATING = 0.2
+    MAX_RADIUS = 50000  # 50km — không đề xuất xa hơn
+    
+    similarity_col = func.similarity(Place.name, query_text).label('sim_score')
+    
+    if user_lat is not None and user_lon is not None:
+        # Có tọa độ người dùng → tính khoảng cách bằng PostGIS
+        user_location = cast(
+            WKTElement(f'POINT({user_lon} {user_lat})', srid=4326),
+            Geography(srid=4326)
+        )
+        distance_col = ST_Distance(
+            Place.geom.cast(Geography(srid=4326)), user_location
+        ).label('distance_m')
+        
+        query = db.query(Place, similarity_col, distance_col) \
+                  .filter(Place.name.ilike(f'%{query_text}%')) \
+                  .filter(ST_DWithin(Place.geom.cast(Geography(srid=4326)), user_location, MAX_RADIUS)) \
+                  .order_by(similarity_col.desc()) \
+                  .limit(20)
+        rows = query.all()
+    else:
+        # Không có tọa độ → chỉ dùng similarity
+        query = db.query(Place, similarity_col) \
+                  .filter(Place.name.ilike(f'%{query_text}%')) \
+                  .order_by(similarity_col.desc()) \
+                  .limit(10)
+        rows = [(p, sim, None) for p, sim in query.all()]
+    
+    if not rows:
+        return []
+    
+    # Tính final_score cho từng kết quả
+    scored = []
+    for row in rows:
+        p, sim_score, dist = row[0], float(row[1] or 0), row[2]
+        
+        # 1. Similarity score (0-1)
+        s_sim = sim_score
+        
+        # 2. Distance score (0-1): Gần = điểm cao, xa = điểm thấp
+        if dist is not None:
+            dist_m = float(dist)
+            s_dist = max(0, 1.0 - (dist_m / MAX_RADIUS))
+        else:
+            s_dist = 0.5  # Không có GPS → neutral
+        
+        # 3. Rating score (0-1): Chuẩn hóa rating/5.0
+        raw_rating = float(p.rating) if p.rating else 0.0
+        s_rating = min(raw_rating / 5.0, 1.0)
+        
+        # Composite score (0-100)
+        final = (W_SIMILARITY * s_sim + W_DISTANCE * s_dist + W_RATING * s_rating) * 100
+        
+        scored.append({
+            "id": p.id,
+            "place_id": str(p.place_id) if p.place_id else None,
+            "name": p.name,
+            "category": p.category,
+            "address": p.address,
+            "lat": float(p.lat) if p.lat else None,
+            "lon": float(p.lon) if p.lon else None,
+            "distance_meters": round(float(dist), 1) if dist is not None else None,
+            "rating": float(p.rating) if p.rating else None,
+            "match_score": round(final, 1)
+        })
+    
+    # Sắp xếp NGHIÊM NGẶT từ cao xuống thấp
+    scored.sort(key=lambda x: x['match_score'], reverse=True)
+    return scored[:10]
+
 def get_nearby_places(db: Session, lat: float, lon: float, radius_meters: int = 2000):
     user_location = cast(WKTElement(f'POINT({lon} {lat})', srid=4326), Geography(srid=4326))
     query = db.query(Place, ST_Distance(Place.geom.cast(Geography(srid=4326)), user_location).label('distance')) \
             .filter(ST_DWithin(Place.geom.cast(Geography(srid=4326)), user_location, radius_meters)) \
-            .order_by(ST_Distance(Place.geom.cast(Geography(srid=4326)), user_location)).limit(50)
+            .order_by(ST_Distance(Place.geom.cast(Geography(srid=4326)), user_location))
     results = query.all()
-    return [{"id": p.id, "place_id": str(p.place_id) if p.place_id else None, "name": p.name, "category": p.category, "address": p.address, "lat": float(p.lat) if p.lat else None, "lon": float(p.lon) if p.lon else None, "distance_meters": round(float(d), 2) if d else None} for p, d in results]
+    return [
+        {
+            "id": p.id, 
+            "place_id": str(p.place_id) if p.place_id else None, 
+            "name": p.name, 
+            "category": p.category, 
+            "address": p.address, 
+            "lat": float(p.lat) if p.lat else None, 
+            "lon": float(p.lon) if p.lon else None, 
+            "distance_meters": round(float(d), 2) if d else None
+        } 
+        for p, d in results
+    ]
 
 def cluster_stores_around_places(db: Session, place_ids: list[int]):
     places = db.query(Place).filter(Place.id.in_(place_ids)).all()
@@ -43,7 +134,7 @@ def cluster_stores_around_places(db: Session, place_ids: list[int]):
         WHERE geom IS NOT NULL
           AND lat BETWEEN :lat_min AND :lat_max
           AND lon BETWEEN :lon_min AND :lon_max
-        LIMIT 100
+        
     """), {"lat_min": lat_min, "lat_max": lat_max,
            "lon_min": lon_min, "lon_max": lon_max}).fetchall()
 
@@ -105,18 +196,7 @@ def cluster_stores_around_places(db: Session, place_ids: list[int]):
 
     return {"clusters": clusters}
 
-def calculate_tsp_greedy(start_lat, start_lon, locations):
-    """Thuật toán định tuyến TSP Greedy để tối ưu OSRM API Request"""
-    def dist(p1, p2): return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
-    unvisited = [(idx, loc['lat'], loc['lon'], loc) for idx, loc in enumerate(locations)]
-    current = (start_lat, start_lon)
-    route_obj = []
-    while unvisited:
-        nearest = min(unvisited, key=lambda x: dist(current, (x[1], x[2])))
-        current = (nearest[1], nearest[2])
-        route_obj.append(nearest[3])
-        unvisited.remove(nearest)
-    return route_obj
+
 
 async def fetch_real_weather(lat: float, lon: float):
     url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
@@ -148,21 +228,15 @@ async def plan_route_osrm(db: Session, current_lat: float, current_lon: float, p
     if not place_dicts:
         raise ValueError("Các địa điểm được chọn không có tọa độ hợp lệ")
 
-    # 1. Tính toán lộ trình TSP bằng thuật toán Tham Lam (Khoảng cách Euclid cơ bản)
-    optimized_places = calculate_tsp_greedy(current_lat, current_lon, place_dicts)
-    optimized_order_ids = [p["id"] for p in optimized_places]
-
     coords = [f"{current_lon},{current_lat}"]
-    for p in optimized_places: coords.append(f"{p['lon']},{p['lat']}")
-
+    for p in place_dicts: coords.append(f"{p['lon']},{p['lat']}")
+    
     coords_str = ";".join(coords)
-    url = f"http://router.project-osrm.org/route/v1/driving/{coords_str}?overview=full&geometries=polyline"
+    # 1. Use OSRM Trip API to calculate actual road distance TSP
+    url = f"http://router.project-osrm.org/trip/v1/driving/{coords_str}?source=first&roundtrip=false&overview=full&geometries=geojson"
 
-    waypoints_fallback = [{"lat": p["lat"], "lon": p["lon"], "name": p["name"]} for p in optimized_places]
-
-    # 2. Bắn Async HTTP Request sang OSRM kèm Timeout 3 giây
     try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(url)
             if response.status_code != 200:
                 raise ValueError("OSRM Server Error")
@@ -171,24 +245,89 @@ async def plan_route_osrm(db: Session, current_lat: float, current_lon: float, p
         if data.get("code") != "Ok":
             raise ValueError("OSRM No Route")
 
-        route = data['routes'][0]
-        osrm_waypoints = [
-            {"lat": w["location"][1], "lon": w["location"][0], "name": optimized_places[i]["name"] if i < len(optimized_places) else ""}
-            for i, w in enumerate(data.get('waypoints', [])[1:])  # skip origin
-        ]
+        trip = data['trips'][0]
+        
+        # 2. Extract TSP order from waypoints array (skipping source at index 0)
+        ordered_places = []
+        for i, wp in enumerate(data['waypoints'][1:]):
+            ordered_places.append((wp['waypoint_index'], place_dicts[i]))
+            
+        ordered_places.sort(key=lambda x: x[0])
+        optimized_order_ids = [p['id'] for _, p in ordered_places]
+        
+        osrm_waypoints = [{"lat": p['lat'], "lon": p['lon'], "name": p['name']} for _, p in ordered_places]
+
         return {
-            "total_distance_meters": route['distance'],
+            "total_distance_meters": trip['distance'],
             "waypoints": osrm_waypoints,
-            "polyline": route['geometry'],
+            "polyline": trip['geometry'],
             "optimized_order": optimized_order_ids,
             "weather_context": weather
         }
     except (httpx.TimeoutException, ValueError, Exception):
-        # Fallback: trả về đường chim bay khi OSRM timeout
+        # Fallback
         return {
             "total_distance_meters": 0.0,
-            "waypoints": waypoints_fallback,
+            "waypoints": [{"lat": p["lat"], "lon": p["lon"], "name": p["name"]} for p in place_dicts],
             "polyline": None,
-            "optimized_order": optimized_order_ids,
+            "optimized_order": [p['id'] for p in place_dicts],
             "weather_context": weather
         }
+
+def get_place_o2o_context(db: Session, place_id: str, radius: int = 2000):
+    from sqlalchemy import func
+    from app.domains.inventory.model import Store, Inventory, Product
+    
+    place = db.query(Place).filter(Place.place_id == place_id).first()
+    if not place:
+        raise ValueError("Không tìm thấy địa điểm")
+        
+    place_info = {
+        "id": place.id,
+        "place_id": place.place_id,
+        "name": place.name,
+        "category": place.category,
+        "address": place.address,
+        "lat": float(place.lat) if place.lat else 0.0,
+        "lon": float(place.lon) if place.lon else 0.0
+    }
+    
+    nearby_stores = []
+    if place.lat and place.lon:
+        point = f"SRID=4326;POINT({place.lon} {place.lat})"
+        # Tìm stores trong bán kính radius
+        stores = db.query(Store).filter(
+            Store.category == 'shopping',
+            func.ST_DWithin(Store.geom, func.ST_GeogFromText(point), radius)
+        ).all()
+        
+        for s in stores:
+            # Tìm products của store này
+            invs = db.query(Inventory).filter(Inventory.store_id == s.store_id).all()
+            products = []
+            if invs:
+                p_ids = [inv.product_id for inv in invs]
+                prods = db.query(Product).filter(Product.product_id.in_(p_ids)).all()
+                for p in prods:
+                    products.append({
+                        "product_id": p.product_id,
+                        "name": p.name,
+                        "price": p.price,
+                        "image_url": p.image_url
+                    })
+            
+            nearby_stores.append({
+                "store_id": s.store_id,
+                "place_id": s.place_id,
+                "name": s.name,
+                "category": s.category,
+                "address": s.address,
+                "lat": float(s.lat) if s.lat else 0.0,
+                "lon": float(s.lon) if s.lon else 0.0,
+                "products": products
+            })
+            
+    return {
+        "place_info": place_info,
+        "nearby_stores": nearby_stores
+    }

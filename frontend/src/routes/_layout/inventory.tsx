@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
 import {
   AlertTriangle,
   ChevronLeft,
@@ -109,24 +110,26 @@ function ProductCard({
   imageUrl,
   onLock,
   isLocking,
+  onClick,
 }: {
   product: ProductResponse & { stock?: number; category?: string }
   imageUrl: string
   onLock: (pid: number) => void
   isLocking: boolean
+  onClick?: () => void
 }) {
-  const stock = product.stock ?? Math.floor(Math.random() * 20) + 1
-  const stockLevel = stock <= 3 ? "low" : stock <= 10 ? "medium" : "high"
-  const stockColor = stockLevel === "low" ? "bg-red-500" : stockLevel === "medium" ? "bg-emerald-400" : "bg-cyan-500"
-  const stockPercent = Math.min((stock / 30) * 100, 100)
+  const stock = product.stock ?? 0
+  const stockLevel = stock === 0 ? "out" : stock <= 5 ? "low" : stock <= 15 ? "medium" : "high"
+  const stockColor = stockLevel === "out" ? "bg-zinc-600" : stockLevel === "low" ? "bg-red-500" : stockLevel === "medium" ? "bg-yellow-400" : "bg-emerald-400"
+  const stockPercent = Math.min((stock / 50) * 100, 100)
 
   return (
-    <div className="group relative bg-zinc-900/40 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-1 hover:shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:border-emerald-500/50 flex flex-col h-[400px]">
+    <div onClick={onClick} className={`cursor-pointer group relative bg-zinc-900/40 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-1 flex flex-col h-[400px] ${stockLevel === "out" ? "opacity-60 grayscale-[50%]" : "hover:shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:border-emerald-500/50"}`}>
       <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
       
       {/* Product Image (60% height) */}
-      <div className="h-[60%] w-full overflow-hidden relative">
-        <img src={imageUrl} alt={product.name} className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-700" />
+      <div className="h-[60%] w-full overflow-hidden relative bg-zinc-800">
+        <img src={product.image_url || imageUrl} alt={product.name} className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-700" />
         <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/20 to-transparent opacity-80" />
         {product.category && (
           <div className="absolute top-3 left-3 bg-zinc-950/60 backdrop-blur-md px-2.5 py-1 rounded text-[10px] font-mono text-white uppercase tracking-widest border border-white/10">
@@ -158,12 +161,12 @@ function ProductCard({
 
         {/* Reserve Button */}
         <button
-          onClick={() => onLock(product.product_id)}
-          disabled={isLocking}
+          onClick={(e) => { e.stopPropagation(); onLock(product.product_id); }}
+          disabled={isLocking || stock === 0}
           className="w-full py-2.5 rounded-lg bg-white hover:bg-emerald-400 text-zinc-950 font-bold text-sm flex items-center justify-center gap-2 transition-colors duration-300 disabled:opacity-100 disabled:bg-zinc-800 disabled:text-zinc-500"
         >
           {isLocking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-          {isLocking ? "Reserving..." : "Reserve"}
+          {isLocking ? "Reserving..." : stock === 0 ? "Out of Stock" : "Reserve"}
         </button>
       </div>
     </div>
@@ -180,6 +183,7 @@ function Inventory() {
   const [locks, setLocks] = useState<LockResponseItem[]>([])
   const [isLoadingLocks, setIsLoadingLocks] = useState(false)
   const [lockingId, setLockingId] = useState<number | null>(null)
+  const [selectedProductDetail, setSelectedProductDetail] = useState<(ProductResponse & { stock?: number; category?: string; imageIndex?: number }) | null>(null)
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [notification, setNotification] = useState("")
   const carouselRef = useRef<HTMLDivElement>(null)
@@ -217,8 +221,8 @@ function Inventory() {
       const res = await InventoryAPI.getStoreProducts(storeId)
       const enhanced = res.data.map((p, idx) => ({
         ...p,
-        category: CATEGORIES[(idx % 2) + 1], // Apparel or Souvenirs
-        stock: Math.floor(Math.random() * 25) + 1,
+        category: p.category || CATEGORIES[(idx % 2) + 1], // Fallback if no category
+        stock: p.stock ?? 0, // REAL stock from backend!
         imageIndex: idx
       }))
       setProducts(enhanced)
@@ -467,6 +471,7 @@ function Inventory() {
                       imageUrl={PRODUCT_IMAGES[imageIdx % PRODUCT_IMAGES.length]}
                       onLock={handleLock}
                       isLocking={lockingId === p.product_id}
+                      onClick={() => setSelectedProductDetail(p)}
                     />
                   )
                 })}
@@ -537,6 +542,65 @@ function Inventory() {
           </div>
         </div>
       )}
+
+            {/* 4. PRODUCT DETAIL MODAL */}
+      <Dialog open={!!selectedProductDetail} onOpenChange={(open) => !open && setSelectedProductDetail(null)}>
+        <DialogContent className="max-w-[800px] p-0 overflow-hidden bg-zinc-950/80 backdrop-blur-2xl border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.8)]">
+          {selectedProductDetail && (() => {
+            const product = selectedProductDetail;
+            const imageUrl = product.image_url || PRODUCT_IMAGES[(product.imageIndex ?? 0) % PRODUCT_IMAGES.length];
+            const stock = product.stock ?? 0;
+            const stockLevel = stock === 0 ? "out" : stock <= 5 ? "low" : stock <= 15 ? "medium" : "high";
+            const stockColor = stockLevel === "out" ? "bg-zinc-600" : stockLevel === "low" ? "bg-red-500" : stockLevel === "medium" ? "bg-yellow-400" : "bg-emerald-400";
+            return (
+              <div className="flex flex-col md:flex-row h-[500px]">
+                {/* Left: Image */}
+                <div className="w-full md:w-1/2 relative h-full bg-zinc-800">
+                  <img src={imageUrl} alt={product.name} className={`w-full h-full object-cover ${stockLevel === 'out' ? 'grayscale-[50%]' : ''}`} />
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent to-zinc-950/90" />
+                  {product.category && (
+                    <div className="absolute top-4 left-4 bg-zinc-950/60 backdrop-blur-md px-3 py-1.5 rounded-md text-[10px] font-mono text-white uppercase tracking-widest border border-white/10">
+                      {product.category}
+                    </div>
+                  )}
+                </div>
+                {/* Right: Details */}
+                <div className="w-full md:w-1/2 p-8 flex flex-col justify-between">
+                  <div>
+                    <h2 className="text-2xl font-bold text-white mb-2">{product.name}</h2>
+                    <div className="flex items-center gap-1 text-emerald-400 mb-6">
+                      <DollarSign className="w-6 h-6" />
+                      <span className="text-3xl font-bold font-mono tracking-tight">{product.price.toLocaleString()}</span>
+                    </div>
+                    <p className="text-zinc-400 text-sm leading-relaxed mb-6 font-mono">
+                      {product.description || "Một sản phẩm cao cấp độc quyền từ mạng lưới AEGIS O2O. Thiết kế tinh xảo, chất lượng vượt trội, phù hợp cho những bộ sưu tập đẳng cấp."}
+                    </p>
+                    
+                    <div className="mb-6">
+                      <div className="flex justify-between items-center mb-2">
+                         <span className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">Tồn kho trực tuyến (Real-time)</span>
+                         <span className="text-sm font-mono font-bold text-zinc-200">{stock} items</span>
+                      </div>
+                      <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
+                         <div className={`h-full rounded-full transition-all duration-1000 ${stockColor} ${stock > 0 ? 'animate-pulse' : ''}`} style={{ width: `${Math.min((stock / 50) * 100, 100)}%` }} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => { handleLock(product.product_id); setSelectedProductDetail(null); }}
+                    disabled={lockingId === product.product_id || stock === 0}
+                    className="w-full py-4 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] disabled:opacity-50 disabled:from-zinc-600 disabled:to-zinc-600 disabled:shadow-none"
+                  >
+                    {lockingId === product.product_id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Lock className="w-5 h-5" />}
+                    {lockingId === product.product_id ? "ĐANG KHÓA HÀNG..." : "🔒 KHÓA HÀNG (REDIS)"}
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
 
       <style>{`
         @keyframes fadeInUp {

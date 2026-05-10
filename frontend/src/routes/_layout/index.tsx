@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { Activity, Globe, Lock, MapPin, Package, Plane, Radio, ShoppingBag, Sparkles, Store, TrendingUp, Users, Zap } from "lucide-react"
+import { Activity, Globe, Lock, MapPin, Package, Plane, Radio, ShoppingBag, Sparkles, Store, TrendingUp, Zap } from "lucide-react"
 import { useEffect, useState } from "react"
 
 export const Route = createFileRoute("/_layout/")({ component: Dashboard })

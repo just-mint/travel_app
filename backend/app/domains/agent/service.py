@@ -32,6 +32,36 @@ TOOLS = [
                     },
                     "required": ["lat", "lon"]
                 }
+            },
+            {
+                "name": "search_products",
+                "description": "Tìm kiếm sản phẩm O2O (ví dụ: áo dài, cà phê, nón lá) để gợi ý mua sắm.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "keyword": {
+                            "type": "STRING",
+                            "description": "Tên sản phẩm cần tìm."
+                        }
+                    },
+                    "required": ["keyword"]
+                }
+            },
+            {
+                "name": "find_stores_near",
+                "description": "Tìm các cửa hàng quanh một tọa độ cụ thể để khách mua sắm.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "lat": {"type": "NUMBER"},
+                        "lon": {"type": "NUMBER"},
+                        "radius": {
+                            "type": "NUMBER",
+                            "description": "Bán kính tìm kiếm bằng mét (mặc định 2000)"
+                        }
+                    },
+                    "required": ["lat", "lon"]
+                }
             }
         ]
     }
@@ -82,10 +112,44 @@ async def execute_tool(db: Session, function_name: str, args: dict):
         except:
             return {"error": "Mạng bị đứt đoạn không thể check thời tiết"}
             
+    elif function_name == "search_products":
+        keyword = args.get("keyword", "")
+        if not keyword: return {"status": "error", "message": "keyword is empty"}
+        from app.domains.inventory.model import Product
+        products = db.query(Product).filter(Product.name.ilike(f"%{keyword}%")).limit(5).all()
+        if not products: return {"status": "not_found", "message": "Không có sản phẩm nào khớp."}
+        
+        result = []
+        for p in products:
+            result.append({"product_id": p.product_id, "name": p.name, "price": p.price})
+        return {"status": "success", "products": result}
+
+    elif function_name == "find_stores_near":
+        lat = args.get("lat")
+        lon = args.get("lon")
+        radius = args.get("radius", 2000)
+        from app.domains.inventory.model import Store
+        from sqlalchemy import func
+        from sqlalchemy.sql import text
+        
+        # Use simple coordinate bounding box or PostGIS ST_DWithin
+        point = f"SRID=4326;POINT({lon} {lat})"
+        stores = db.query(Store).filter(
+            func.ST_DWithin(Store.geom, func.ST_GeogFromText(point), radius)
+        ).limit(5).all()
+        
+        if not stores: return {"status": "not_found", "message": "Không có cửa hàng nào gần đó."}
+        
+        result = []
+        for s in stores:
+            result.append({"store_id": s.store_id, "name": s.name, "category": s.category, "address": s.address})
+        return {"status": "success", "stores": result}
+        
     return {"error": f"Unknown tool: {function_name}"}
 
 async def chat_with_agent(db: Session, request: schema.AgentChatRequest):
-    api_key = os.getenv("GEMINI_API_KEY")
+    from app.core.config import settings
+    api_key = settings.GEMINI_API_KEY
     internal_actions = []
     bot_answer = "Oh, có lỗi xảy ra hoặc tôi đang bảo trì. Vui lòng thử lại sau!"
     
@@ -95,7 +159,7 @@ async def chat_with_agent(db: Session, request: schema.AgentChatRequest):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     
     # Ép Gemini tuân thủ tư duy O2O Agent
-    sys_instruction_text = "Bạn là AEGIS AI, chuyên gia du lịch và gợi ý mua sắm. Nếu khách hỏi địa danh, BẮT BUỘC gọi hàm search_culture để xem nó ở đâu trước. Nếu muốn biết thời tiết, gọi check_weather bằng Vĩ độ Kinh độ."
+    sys_instruction_text = "Bạn là AEGIS AI, chuyên gia du lịch và gợi ý mua sắm O2O. Nếu khách hỏi địa danh, BẮT BUỘC gọi hàm search_culture để xem nó ở đâu trước. Nếu khách muốn mua sắm, BẮT BUỘC gọi hàm search_products để tìm sản phẩm, hoặc find_stores_near để tìm cửa hàng gần đó. Luôn khuyến khích khách hàng 'Giữ hàng (Lock)' qua giao diện O2O."
     system_instruction = {"parts": [{"text": sys_instruction_text}]}
     
     history = [

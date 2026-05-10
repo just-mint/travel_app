@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Any, Union
 
 class PlaceResponse(BaseModel):
     id: int
@@ -14,6 +14,7 @@ class PlaceResponse(BaseModel):
     rating: Optional[float] = None
     review_count: Optional[int] = None
     image_url: Optional[str] = None
+    match_score: Optional[float] = None
     class Config:
         from_attributes = True
 
@@ -56,6 +57,21 @@ class RoutePlanRequest(BaseModel):
 class RoutePlanResponse(BaseModel):
     total_distance_meters: float
     waypoints: List[dict]
-    polyline: Optional[str]
+    polyline: Optional[Union[str, dict]] = None
     optimized_order: List[int]
     weather_context: Optional[dict] = None
+
+class ProductCompactResponse(BaseModel):
+    product_id: int
+    name: str
+    price: float
+    image_url: Optional[str] = None
+    class Config:
+        from_attributes = True
+
+class StoreWithProductsResponse(StoreResponse):
+    products: List[ProductCompactResponse]
+
+class O2OContextResponse(BaseModel):
+    place_info: PlaceResponse
+    nearby_stores: List[StoreWithProductsResponse]

@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router"
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import {
   CheckCircle2,
+  Sparkles,
   Eye,
   Image,
   Loader2,
@@ -14,7 +16,9 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import {
   type ClosetItemResponse,
   type TaskStatus,
+  type ProductResponse,
   VisionAPI,
+  InventoryAPI,
 } from "@/client/aegis-api"
 
 export const Route = createFileRoute("/_layout/vision")({
@@ -30,12 +34,15 @@ function VisionCloset() {
   const [taskId, setTaskId] = useState("")
   const [taskStatus, setTaskStatus] = useState<TaskStatus | null>(null)
   const [isPolling, setIsPolling] = useState(false)
+  const [matchedProducts, setMatchedProducts] = useState<ProductResponse[]>([])
   // Closet
   const [closetItems, setClosetItems] = useState<ClosetItemResponse[]>([])
   const [isLoadingCloset, setIsLoadingCloset] = useState(false)
   const [closetFile, setClosetFile] = useState<File | null>(null)
   const [isUploadingCloset, setIsUploadingCloset] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const [selectedClosetItem, setSelectedClosetItem] = useState<ClosetItemResponse | null>(null)
+  const [isMixMatchOpen, setIsMixMatchOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const closetFileRef = useRef<HTMLInputElement>(null)
 
@@ -73,6 +80,22 @@ function VisionCloset() {
     }, 2000)
     return () => clearInterval(interval)
   }, [isPolling, taskId])
+
+  // Fetch matched products details
+  useEffect(() => {
+    const fetchMatchedProducts = async () => {
+      if (taskStatus?.status === "completed" && taskStatus.matched_product_ids?.length) {
+        try {
+          const promises = taskStatus.matched_product_ids.map(id => InventoryAPI.getProduct(id).then(res => res.data));
+          const products = await Promise.all(promises);
+          setMatchedProducts(products.filter(p => p !== null));
+        } catch (e) {
+          console.error("Failed to fetch matched products", e);
+        }
+      }
+    };
+    fetchMatchedProducts();
+  }, [taskStatus]);
 
   // Load Closet
   const loadCloset = useCallback(async () => {
@@ -327,18 +350,33 @@ function VisionCloset() {
                 {taskStatus.matched_product_ids &&
                   taskStatus.matched_product_ids.length > 0 && (
                     <div className="glass-card p-4">
-                      <h4 className="text-[10px] font-mono text-purple-400 uppercase tracking-wider mb-2">
-                        Matched Products
+                      <h4 className="text-[10px] font-mono text-purple-400 uppercase tracking-wider mb-4">
+                        O2O Matched Products
                       </h4>
-                      <div className="flex flex-wrap gap-2">
-                        {taskStatus.matched_product_ids.map((pid) => (
-                          <span
-                            key={pid}
-                            className="status-badge status-badge-info"
-                          >
-                            PID: {pid}
-                          </span>
-                        ))}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {matchedProducts.length > 0 ? (
+                          matchedProducts.map((prod) => (
+                            <div key={prod.product_id} className="bg-white/5 border border-white/10 rounded-xl overflow-hidden flex flex-col md:flex-row h-[120px] transition-transform hover:scale-[1.02]">
+                              <div className="w-full md:w-[120px] h-[120px] shrink-0 bg-zinc-800">
+                                <img src={prod.image_url || "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?q=80&w=200"} alt={prod.name} className="w-full h-full object-cover" />
+                              </div>
+                              <div className="p-3 flex flex-col justify-between flex-1 min-w-0">
+                                <div>
+                                  <h5 className="text-white text-sm font-bold truncate">{prod.name}</h5>
+                                  <p className="text-zinc-400 text-[10px] line-clamp-2 mt-0.5">{prod.description}</p>
+                                </div>
+                                <div className="flex items-center justify-between mt-2">
+                                  <span className="text-emerald-400 font-mono font-bold text-sm">${prod.price.toLocaleString()}</span>
+                                  <button className="px-3 py-1 text-[10px] bg-purple-500 hover:bg-purple-600 text-white font-bold rounded shadow-[0_0_10px_rgba(168,85,247,0.4)] transition-all">Mua O2O</button>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="col-span-2 flex items-center justify-center py-4">
+                            <Loader2 className="w-5 h-5 text-purple-400 animate-spin" />
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -413,12 +451,22 @@ function VisionCloset() {
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
                   <div className="p-3">
-                    <p className="text-[10px] text-zinc-500 font-mono">
-                      ID: {item.id}
-                    </p>
-                    <p className="text-[10px] text-zinc-600 font-mono">
-                      {new Date(item.created_at).toLocaleDateString()}
-                    </p>
+                    <div className="flex justify-between items-center mb-2">
+                       <div>
+                         <p className="text-[10px] text-zinc-500 font-mono">
+                           ID: {item.id}
+                         </p>
+                         <p className="text-[10px] text-zinc-600 font-mono">
+                           {new Date(item.created_at).toLocaleDateString()}
+                         </p>
+                       </div>
+                    </div>
+                    <button 
+                      onClick={() => { setSelectedClosetItem(item); setIsMixMatchOpen(true); }}
+                      className="w-full mt-1 bg-gradient-to-r from-purple-600/20 to-cyan-600/20 hover:from-purple-500/40 hover:to-cyan-500/40 border border-purple-500/30 text-purple-300 hover:text-white font-mono text-[10px] uppercase tracking-wider py-1.5 rounded flex justify-center items-center gap-1.5 transition-all"
+                    >
+                      <Sparkles className="w-3 h-3" /> AI Mix & Match
+                    </button>
                   </div>
                 </div>
               ))}
@@ -438,6 +486,92 @@ function VisionCloset() {
           )}
         </>
       )}
+      {/* AI Mix & Match Sheet */}
+      <Sheet open={isMixMatchOpen} onOpenChange={setIsMixMatchOpen}>
+        <SheetContent className="w-[400px] sm:w-[500px] border-l border-white/10 bg-black/80 backdrop-blur-3xl text-zinc-100 p-0 shadow-[-20px_0_50px_rgba(0,0,0,0.8)] overflow-y-auto custom-scrollbar">
+          <SheetHeader className="p-6 border-b border-white/10 bg-gradient-to-b from-purple-900/20 to-transparent sticky top-0 z-10 backdrop-blur-md">
+            <SheetTitle className="flex items-center gap-3 text-white text-xl font-bold tracking-wide">
+              <Sparkles className="w-6 h-6 text-purple-400 drop-shadow-[0_0_8px_rgba(168,85,247,0.8)]" /> AI Style Matcher
+            </SheetTitle>
+            <p className="text-xs text-purple-400 font-mono mt-1 flex items-center gap-2">
+               <span className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)] animate-pulse"></span>
+               512D Vector Embeddings Ready
+            </p>
+          </SheetHeader>
+          
+          <div className="p-6 space-y-8">
+            {selectedClosetItem && (
+              <div className="flex flex-col items-center">
+                <div className="relative w-32 h-32 rounded-2xl overflow-hidden border-2 border-purple-500/50 shadow-[0_0_30px_rgba(168,85,247,0.3)] mb-4">
+                  <img src={`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/${selectedClosetItem.image_path}`} className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                  <div className="absolute bottom-2 w-full text-center text-[10px] font-mono text-purple-300">Target Vector</div>
+                </div>
+                <div className="w-full h-px bg-gradient-to-r from-transparent via-purple-500/50 to-transparent" />
+              </div>
+            )}
+            
+            <div>
+               <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+                 <Shirt className="w-4 h-4 text-cyan-400" /> Recommended Matches
+               </h3>
+               
+               <div className="space-y-4">
+                 {/* Mock Item 1 */}
+                 <div className="flex gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 hover:border-purple-500/50 hover:bg-white/10 transition-all cursor-pointer">
+                   <div className="w-24 h-24 rounded-xl overflow-hidden shrink-0">
+                     <img src="https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?q=80&w=400" className="w-full h-full object-cover" />
+                   </div>
+                   <div className="flex-1 flex flex-col justify-between">
+                     <div>
+                       <h4 className="font-bold text-white text-sm">Áo khoác Blazer Premium</h4>
+                       <p className="text-[10px] text-zinc-400 mt-1">Phối cực hợp với tone màu sáng của bạn.</p>
+                     </div>
+                     <div className="flex items-center justify-between mt-2">
+                       <span className="text-emerald-400 font-mono font-bold">$120.00</span>
+                       <span className="bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded text-[10px] font-mono">Match: 98.5%</span>
+                     </div>
+                   </div>
+                 </div>
+                 
+                 {/* Mock Item 2 */}
+                 <div className="flex gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 hover:border-cyan-500/50 hover:bg-white/10 transition-all cursor-pointer">
+                   <div className="w-24 h-24 rounded-xl overflow-hidden shrink-0">
+                     <img src="https://images.unsplash.com/photo-1559525839-b184a4d698c7?q=80&w=400" className="w-full h-full object-cover" />
+                   </div>
+                   <div className="flex-1 flex flex-col justify-between">
+                     <div>
+                       <h4 className="font-bold text-white text-sm">Quần âu Slim-fit</h4>
+                       <p className="text-[10px] text-zinc-400 mt-1">Gợi ý tạo sự tương phản thanh lịch.</p>
+                     </div>
+                     <div className="flex items-center justify-between mt-2">
+                       <span className="text-emerald-400 font-mono font-bold">$85.00</span>
+                       <span className="bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-2 py-0.5 rounded text-[10px] font-mono">Match: 94.2%</span>
+                     </div>
+                   </div>
+                 </div>
+                 
+                 {/* Mock Item 3 */}
+                 <div className="flex gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 hover:border-blue-500/50 hover:bg-white/10 transition-all cursor-pointer">
+                   <div className="w-24 h-24 rounded-xl overflow-hidden shrink-0">
+                     <img src="https://images.unsplash.com/photo-1610701596007-11502861dcfa?q=80&w=400" className="w-full h-full object-cover" />
+                   </div>
+                   <div className="flex-1 flex flex-col justify-between">
+                     <div>
+                       <h4 className="font-bold text-white text-sm">Sơ mi lụa Silk Dress</h4>
+                       <p className="text-[10px] text-zinc-400 mt-1">Cùng chung tệp phong cách đường phố.</p>
+                     </div>
+                     <div className="flex items-center justify-between mt-2">
+                       <span className="text-emerald-400 font-mono font-bold">$95.00</span>
+                       <span className="bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded text-[10px] font-mono">Match: 89.1%</span>
+                     </div>
+                   </div>
+                 </div>
+               </div>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }

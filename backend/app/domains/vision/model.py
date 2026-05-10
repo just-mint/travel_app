@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from app.db.session import Base
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import String, Integer, DateTime
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from pgvector.sqlalchemy import Vector
 
 class VisionTask(Base):
@@ -18,7 +18,7 @@ class VisionTask(Base):
 class VirtualCloset(Base):
     __tablename__ = "virtual_closets"
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=True), index=True)
     image_path: Mapped[str] = mapped_column(String(1000))
     # Nhờ cài đặt hệ xịn pgvector, lưu mảng Embedings 512D rất mạnh
     vector_embedding: Mapped[list | None] = mapped_column(Vector(512), nullable=True)

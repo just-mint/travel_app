@@ -45,8 +45,8 @@ function Login() {
 
   const preloadedImages = useRef<HTMLImageElement[]>([])
   const gridIndexRef = useRef(1)
-  const transitionTimer = useRef<NodeJS.Timeout>()
-  const intervalRef = useRef<NodeJS.Timeout>()
+  const transitionTimer = useRef<NodeJS.Timeout | null>(null)
+  const intervalRef = useRef<NodeJS.Timeout | null>(null)
 
   // Preload tất cả ảnh
   useEffect(() => {

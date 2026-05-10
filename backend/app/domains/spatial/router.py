@@ -5,11 +5,23 @@ from app.domains.spatial import service, schema
 
 router = APIRouter()
 
+@router.get("/search", response_model=list[schema.PlaceResponse])
+def search_places_omni(q: str, lat: float = None, lon: float = None, db: Session = Depends(get_db)):
+    try:
+        return service.search_places_omnisearch(db=db, query_text=q, user_lat=lat, user_lon=lon)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi: {str(e)}")
+
 @router.get("/nearby-places", response_model=schema.NearbySearchResponse)
 def find_nearby_places(lat: float, lon: float, radius: int = 2000, db: Session = Depends(get_db)):
     try:
         places = service.get_nearby_places(db=db, lat=lat, lon=lon, radius_meters=radius)
-        return {"user_location": {"lat": lat, "lon": lon}, "search_radius_meters": radius, "total_found": len(places), "places": places}
+        return {
+            "user_location": {"lat": lat, "lon": lon}, 
+            "search_radius_meters": radius, 
+            "total_found": len(places),
+            "places": places
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi: {str(e)}")
 
@@ -32,3 +44,12 @@ async def create_optimal_route(request: schema.RoutePlanRequest, db: Session = D
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi Routing OSRM: {str(e)}")
+
+@router.get("/places/{place_id}/o2o-context", response_model=schema.O2OContextResponse)
+def get_place_o2o_context_api(place_id: str, radius: int = 2000, db: Session = Depends(get_db)):
+    try:
+        return service.get_place_o2o_context(db=db, place_id=place_id, radius=radius)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi: {str(e)}")

@@ -10,8 +10,8 @@ from app.domains.inventory import service, schema
 router = APIRouter()
 
 @router.get("/stores", response_model=list[schema.StoreResponse])
-def get_stores(db: Session = Depends(get_db)):
-    return service.get_all_stores(db=db)
+def get_stores(place_id: str | None = None, db: Session = Depends(get_db)):
+    return service.get_all_stores(db=db, place_id=place_id)
 
 @router.get("/products/{id}", response_model=schema.ProductResponse)
 def get_product(id: int, db: Session = Depends(get_db)):

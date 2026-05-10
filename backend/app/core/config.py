@@ -101,6 +101,9 @@ class Settings(BaseSettings):
     ALLOWED_IMAGE_TYPES: list[str] = ["image/jpeg", "image/png", "image/webp"]
     MAX_UPLOAD_SIZE_MB: int = 10
 
+    # Gemini AI
+    GEMINI_API_KEY: str | None = None
+
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if value == "changethis":
             message = (

@@ -9,6 +9,8 @@ class ProductResponse(BaseModel):
     original_price: Optional[int] = None
     description: Optional[str] = None
     image_url: Optional[str] = None
+    stock: Optional[int] = 0
+    store_id: Optional[int] = None
     class Config:
         from_attributes = True
 

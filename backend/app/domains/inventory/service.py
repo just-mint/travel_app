@@ -9,20 +9,46 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def get_all_stores(db: Session):
-    return db.query(Store).all()
+def get_all_stores(db: Session, place_id: str | None = None):
+    from sqlalchemy import func
+    from app.domains.culture.model import Place
+
+    query = db.query(Store).filter(Store.category == 'shopping')
+    if place_id:
+        place = db.query(Place).filter(Place.place_id == place_id).first()
+        if place and place.lat and place.lon:
+            point = f"SRID=4326;POINT({place.lon} {place.lat})"
+            query = query.filter(func.ST_DWithin(Store.geom, func.ST_GeogFromText(point), 2000))
+        else:
+            return []
+            
+    return query.limit(20).all()
 
 def get_product_by_id(db: Session, product_id: int):
     return db.query(Product).filter(Product.product_id == product_id).first()
 
 
 def get_products_by_store(db: Session, store_id: int):
-    # Cần qua Inventory để tìm Products thuộc về Store này
-    invs = db.query(Inventory).filter(Inventory.store_id == store_id).limit(50).all()
-    if not invs:
-        return []
-    p_ids = [inv.product_id for inv in invs]
-    return db.query(Product).filter(Product.product_id.in_(p_ids)).all()
+    # Join Inventory and Product to get real stock and store_id
+    results = db.query(Product, Inventory).join(
+        Inventory, Product.product_id == Inventory.product_id
+    ).filter(Inventory.store_id == store_id).limit(50).all()
+    
+    products = []
+    for prod, inv in results:
+        prod_dict = {
+            "product_id": prod.product_id,
+            "name": prod.name,
+            "price": prod.price,
+            "original_price": prod.original_price,
+            "description": prod.description,
+            "image_url": prod.image_url,
+            "stock": inv.stock,
+            "store_id": inv.store_id
+        }
+        products.append(prod_dict)
+    
+    return products
 
 
 async def create_lock(db: Session, redis: Redis, request: LockRequest, user_id: int):

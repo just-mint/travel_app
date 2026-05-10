@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/sidebar"
 import { isLoggedIn } from "@/hooks/useAuth"
 import useAuth from "@/hooks/useAuth"
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/dropdown-menu" // wait this is wrong
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   DropdownMenu,
@@ -71,11 +70,17 @@ interface ChatMessage {
 }
 
 // Agent Chat Panel
-const AgentChatPanel = () => {
+const AgentChatPanel = ({ initialMessage }: { initialMessage?: string }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (initialMessage) {
+      setInput(initialMessage)
+    }
+  }, [initialMessage])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -197,6 +202,20 @@ const AgentChatPanel = () => {
 function Layout() {
   const { user: currentUser, logout } = useAuth()
   
+  const [isChatOpen, setIsChatOpen] = useState(false)
+  const [initialChatMessage, setInitialChatMessage] = useState("")
+
+  useEffect(() => {
+    const handleOpenChatEvent = (e: any) => {
+      setIsChatOpen(true)
+      if (e.detail?.message) {
+        setInitialChatMessage(e.detail.message)
+      }
+    }
+    document.addEventListener('open-agent-chat', handleOpenChatEvent)
+    return () => document.removeEventListener('open-agent-chat', handleOpenChatEvent)
+  }, [])
+
   const initials = currentUser?.full_name 
     ? currentUser.full_name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
     : currentUser?.email?.substring(0, 2).toUpperCase() || 'AL'
@@ -287,7 +306,7 @@ function Layout() {
           </main>
 
           {/* FAB Executive Agent */}
-          <SheetComp>
+          <SheetComp open={isChatOpen} onOpenChange={setIsChatOpen}>
             <SheetTriggerComp asChild>
               <button className="fixed bottom-8 right-8 z-50 p-4 bg-black/60 hover:bg-black backdrop-blur-xl border border-cyan-500/50 text-cyan-400 rounded-full shadow-[0_0_30px_rgba(34,211,238,0.3)] hover:shadow-[0_0_40px_rgba(34,211,238,0.6)] transition-all duration-300 hover:scale-110 active:scale-95 group">
                 <div className="absolute inset-0 rounded-full border border-cyan-400/30 animate-ping"></div>
@@ -304,7 +323,7 @@ function Layout() {
                    LINK SECURED // GEMINI ACTIVE
                 </p>
               </SheetHeaderComp>
-              <AgentChatPanel />
+              <AgentChatPanel initialMessage={initialChatMessage} />
             </SheetContentComp>
           </SheetComp>
         </SidebarInset>

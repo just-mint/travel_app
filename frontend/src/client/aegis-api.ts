@@ -5,10 +5,10 @@
  */
 import axios from "axios"
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000"
+const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "http://localhost:8000" : "");
 
 const aegisClient = axios.create({
-  baseURL: `${API_BASE}/api/v1`,
+  baseURL: API_BASE ? `${API_BASE}/api/v1` : "/api/v1",
   headers: { "Content-Type": "application/json" },
 })
 
@@ -101,6 +101,31 @@ export interface RoutePlanResponse {
   weather_context?: Record<string, unknown>
 }
 
+export interface ProductCompactResponse {
+  product_id: number
+  name: string
+  price: number
+  image_url?: string
+}
+
+export interface StoreWithProductsResponse {
+  store_id: number
+  place_id?: string
+  name: string
+  category?: string
+  address?: string
+  lat?: number
+  lon?: number
+  phone?: string
+  rating?: number
+  products: ProductCompactResponse[]
+}
+
+export interface O2OContextResponse {
+  place_info: PlaceResponse
+  nearby_stores: StoreWithProductsResponse[]
+}
+
 // Inventory
 export interface ProductResponse {
   product_id: number
@@ -109,6 +134,9 @@ export interface ProductResponse {
   original_price?: number
   description?: string
   image_url?: string
+  stock?: number
+  store_id?: number
+  category?: string
 }
 export interface LockResponseItem {
   id: number
@@ -161,6 +189,9 @@ export const CultureAPI = {
 
 // ===================== SPATIAL API =====================
 export const SpatialAPI = {
+  searchOmni: (q: string, lat?: number, lon?: number) =>
+    aegisClient.get<PlaceResponse[]>("/spatial/search", { params: { q, lat, lon } }),
+
   nearbyPlaces: (lat: number, lon: number, radius = 2000) =>
     aegisClient.get<NearbySearchResponse>("/spatial/nearby-places", {
       params: { lat, lon, radius },
@@ -175,12 +206,15 @@ export const SpatialAPI = {
       current_lon,
       place_ids,
     }),
+
+  getPlaceO2OContext: (place_id: string, radius: number = 2000) =>
+    aegisClient.get<O2OContextResponse>(`/spatial/places/${place_id}/o2o-context`, { params: { radius } }),
 }
 
 // ===================== INVENTORY API =====================
 export const InventoryAPI = {
-  getStores: () =>
-    aegisClient.get<StoreResponse[]>("/inventory/stores"),
+  getStores: (place_id?: string) =>
+    aegisClient.get<StoreResponse[]>("/inventory/stores", { params: { place_id } }),
 
   getProduct: (id: number) =>
     aegisClient.get<ProductResponse>(`/inventory/products/${id}`),
