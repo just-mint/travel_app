@@ -23,6 +23,13 @@ def get_product(id: int, db: Session = Depends(get_db)):
 def get_store_products(store_id: int, db: Session = Depends(get_db)):
     return service.get_products_by_store(db=db, store_id=store_id)
 
+@router.get("/search", response_model=schema.SearchResult)
+def search(q: str = "", db: Session = Depends(get_db)):
+    """Tìm kiếm tổng hợp: Store + Product theo keyword"""
+    if not q or len(q.strip()) < 1:
+        return {"stores": [], "products": []}
+    return service.search_stores_and_products(db=db, query=q.strip())
+
 @router.post("/lock", response_model=dict)
 async def create_inventory_lock(request: schema.LockRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db), redis: Redis = Depends(get_redis)):
     """API Phân tầng: Chạm phanh Redis trước, Lock Postgres sau. An toàn giữ hàng O2O."""
@@ -54,3 +61,14 @@ def compare_prices(
         db=db, product_id=product_id, current_store_id=store_id,
         lat=lat, lon=lon,
     )
+
+
+@router.post("/orders", response_model=schema.OrderResponse)
+async def create_order(
+    data: schema.OrderCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+):
+    """Hoàn tất đơn hàng O2O: Xóa Redis Lock → Trừ tồn kho → Tạo Order → Trả VietQR"""
+    return await service.finalize_order(db=db, redis=redis, data=data, user_id=current_user.id)

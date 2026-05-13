@@ -1,6 +1,6 @@
 import { Link as RouterLink, useRouterState } from "@tanstack/react-router"
 import type { LucideIcon } from "lucide-react"
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
 
 import {
   SidebarGroup,
@@ -71,9 +71,10 @@ export function Main({ items }: MainProps) {
                     className={`
                       group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium
                       transition-all duration-300 ease-out
-                      ${isActive
-                        ? "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-white shadow-[0_0_12px_rgba(6,182,212,0.3)]"
-                        : "text-zinc-400 hover:text-white hover:bg-white/5"
+                      ${
+                        isActive
+                          ? "bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-white shadow-[0_0_12px_rgba(6,182,212,0.3)]"
+                          : "text-zinc-400 hover:text-white hover:bg-white/5"
                       }
                     `}
                   >
@@ -83,21 +84,26 @@ export function Main({ items }: MainProps) {
                     )}
 
                     {/* Icon */}
-                    <div className={`
+                    <div
+                      className={`
                       relative flex h-5 w-5 items-center justify-center transition-all duration-300
-                      ${isActive
-                        ? "text-cyan-400 drop-shadow-[0_0_5px_rgba(6,182,212,0.8)]"
-                        : "text-zinc-500 group-hover:text-cyan-300"
+                      ${
+                        isActive
+                          ? "text-cyan-400 drop-shadow-[0_0_5px_rgba(6,182,212,0.8)]"
+                          : "text-zinc-500 group-hover:text-cyan-300"
                       }
-                    `}>
+                    `}
+                    >
                       <item.icon className="h-5 w-5 transition-transform duration-200 group-hover:scale-110" />
                     </div>
 
                     {/* Title */}
-                    <span className={`
+                    <span
+                      className={`
                       tracking-wide transition-all duration-200
                       ${isActive ? "font-semibold tracking-wider" : "group-hover:tracking-wider"}
-                    `}>
+                    `}
+                    >
                       {item.title}
                     </span>
                   </RouterLink>

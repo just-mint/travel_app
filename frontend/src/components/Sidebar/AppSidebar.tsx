@@ -4,10 +4,10 @@ import {
   Map,
   Package,
   PackageOpen,
+  Route,
   ScanFace,
   Settings,
   Users,
-  Route,
 } from "lucide-react"
 
 import { SidebarAppearance } from "@/components/Common/Appearance"

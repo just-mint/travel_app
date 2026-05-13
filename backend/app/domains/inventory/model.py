@@ -60,3 +60,18 @@ class InventoryLock(Base):
     __table_args__ = (
         Index("idx_active_locks", expires_at, postgresql_where=(text("status IN ('soft_locked', 'active')"))),
     )
+
+class Order(Base):
+    __tablename__ = "orders"
+    order_id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=True), index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.product_id"))
+    store_id: Mapped[int | None] = mapped_column(ForeignKey("stores.store_id"), nullable=True)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    total_amount: Mapped[int] = mapped_column(Integer, default=0)
+    full_name: Mapped[str] = mapped_column(String(255))
+    phone: Mapped[str] = mapped_column(String(20))
+    address: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(50), default="PENDING_SHIP")
+    order_code: Mapped[str] = mapped_column(String(20), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.now(timezone.utc))

@@ -1,634 +1,624 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { Dialog, DialogContent } from "@/components/ui/dialog"
 import {
-  AlertTriangle,
-  ChevronLeft,
-  ChevronRight,
+  CheckCircle2,
   Clock,
-  DollarSign,
+  CreditCard,
   Loader2,
   Lock,
   MapPin,
   Package,
   PackageOpen,
-  ShoppingBag,
+  ScanLine,
+  Search,
   ShoppingCart,
   Store,
   X,
   Zap,
 } from "lucide-react"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import {
   InventoryAPI,
   type LockResponseItem,
+  type OrderCreate,
+  type OrderResponse,
   type ProductResponse,
+  type StoreResponse,
 } from "@/client/aegis-api"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 
 export const Route = createFileRoute("/_layout/inventory")({
   component: Inventory,
 })
 
-const CATEGORIES = ["All", "Apparel", "Souvenirs", "Tất cả", "Đặc sản", "Mỹ nghệ"]
-
+const _CATEGORIES = [
+  "All",
+  "Apparel",
+  "Souvenirs",
+  "Tất cả",
+  "Đặc sản",
+  "Mỹ nghệ",
+]
 const STORE_IMAGES = [
   "https://images.unsplash.com/photo-1550650222-6b94dbba2211?q=80&w=800",
   "https://images.unsplash.com/photo-1559592413-7ceecea18501?q=80&w=800",
   "https://images.unsplash.com/photo-1555921015-5532091f6026?q=80&w=800",
 ]
-
 const PRODUCT_IMAGES = [
   "https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?q=80&w=600",
   "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?q=80&w=600",
-  "https://images.unsplash.com/photo-1610701596007-11502861dcfa?q=80&w=600",
-  "https://images.unsplash.com/photo-1559525839-b184a4d698c7?q=80&w=600",
 ]
 
-interface StoreType {
-  id: number
-  name: string
-  address: string
-  image: string
-  status: string
-  isOpen: boolean
-}
-
-function CountdownTimer({ expiresAt, ttlSeconds }: { expiresAt: string; ttlSeconds: number }) {
+function CountdownTimer({
+  expiresAt,
+  ttlSeconds,
+}: {
+  expiresAt: string
+  ttlSeconds: number
+}) {
   const [remaining, setRemaining] = useState(ttlSeconds)
-  
   useEffect(() => {
     const interval = setInterval(() => {
-      const now = Date.now()
-      const exp = new Date(expiresAt).getTime()
-      const diff = Math.max(0, Math.floor((exp - now) / 1000))
+      const diff = Math.max(
+        0,
+        Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000),
+      )
       setRemaining(diff)
       if (diff <= 0) clearInterval(interval)
     }, 1000)
     return () => clearInterval(interval)
   }, [expiresAt])
-  
-  const minutes = Math.floor(remaining / 60)
-  const seconds = remaining % 60
-  const percentage = ttlSeconds > 0 ? (remaining / ttlSeconds) * 100 : 0
-  const isUrgent = remaining < 120
-  
-  const colorClass = isUrgent ? "text-red-400" : "text-emerald-400"
-  const strokeColor = isUrgent ? "#ef4444" : "#10b981"
+
+  const m = Math.floor(remaining / 60)
+  const s = remaining % 60
+  const colorClass = remaining < 120 ? "text-red-400" : "text-amber-400"
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="relative w-10 h-10">
-        <svg className="w-10 h-10 -rotate-90" viewBox="0 0 36 36">
-          <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="3" />
-          <circle
-            cx="18"
-            cy="18"
-            r="15"
-            fill="none"
-            stroke={strokeColor}
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeDasharray={`${percentage * 0.94} 100`}
-            className="transition-all duration-1000"
-          />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <Clock className={`w-3.5 h-3.5 ${colorClass}`} />
-        </div>
-      </div>
-      <div>
-        <span className={`text-sm font-mono font-bold ${colorClass}`}>
-          {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
-        </span>
-        <p className="text-[10px] text-zinc-400 font-mono uppercase tracking-wider">còn lại</p>
-      </div>
-    </div>
-  )
-}
-
-function ProductCard({
-  product,
-  imageUrl,
-  onLock,
-  isLocking,
-  onClick,
-}: {
-  product: ProductResponse & { stock?: number; category?: string }
-  imageUrl: string
-  onLock: (pid: number) => void
-  isLocking: boolean
-  onClick?: () => void
-}) {
-  const stock = product.stock ?? 0
-  const stockLevel = stock === 0 ? "out" : stock <= 5 ? "low" : stock <= 15 ? "medium" : "high"
-  const stockColor = stockLevel === "out" ? "bg-zinc-600" : stockLevel === "low" ? "bg-red-500" : stockLevel === "medium" ? "bg-yellow-400" : "bg-emerald-400"
-  const stockPercent = Math.min((stock / 50) * 100, 100)
-
-  return (
-    <div onClick={onClick} className={`cursor-pointer group relative bg-zinc-900/40 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-1 flex flex-col h-[400px] ${stockLevel === "out" ? "opacity-60 grayscale-[50%]" : "hover:shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:border-emerald-500/50"}`}>
-      <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
-      
-      {/* Product Image (60% height) */}
-      <div className="h-[60%] w-full overflow-hidden relative bg-zinc-800">
-        <img src={product.image_url || imageUrl} alt={product.name} className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-700" />
-        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/20 to-transparent opacity-80" />
-        {product.category && (
-          <div className="absolute top-3 left-3 bg-zinc-950/60 backdrop-blur-md px-2.5 py-1 rounded text-[10px] font-mono text-white uppercase tracking-widest border border-white/10">
-            {product.category}
-          </div>
-        )}
-      </div>
-
-      <div className="relative p-4 flex flex-col h-[40%] justify-between">
-        {/* Title & Price */}
-        <div>
-          <h3 className="font-bold text-white text-base leading-tight mb-1 line-clamp-1">{product.name}</h3>
-          <div className="flex items-center gap-1 text-emerald-400">
-            <DollarSign className="w-4 h-4" />
-            <span className="text-lg font-bold font-mono tracking-tight">{product.price.toLocaleString()}</span>
-          </div>
-        </div>
-
-        {/* Real-time Stock Bar */}
-        <div className="mt-2 mb-3">
-           <div className="flex justify-between items-center mb-1.5">
-              <span className="text-[11px] text-zinc-400 uppercase tracking-wider font-semibold">Real-time Stock</span>
-              <span className="text-xs font-mono text-zinc-300">{stock} left</span>
-           </div>
-           <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-              <div className={`h-full rounded-full transition-all duration-1000 ${stockColor}`} style={{ width: `${stockPercent}%` }} />
-           </div>
-        </div>
-
-        {/* Reserve Button */}
-        <button
-          onClick={(e) => { e.stopPropagation(); onLock(product.product_id); }}
-          disabled={isLocking || stock === 0}
-          className="w-full py-2.5 rounded-lg bg-white hover:bg-emerald-400 text-zinc-950 font-bold text-sm flex items-center justify-center gap-2 transition-colors duration-300 disabled:opacity-100 disabled:bg-zinc-800 disabled:text-zinc-500"
-        >
-          {isLocking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-          {isLocking ? "Reserving..." : stock === 0 ? "Out of Stock" : "Reserve"}
-        </button>
-      </div>
+    <div
+      className={`flex items-center gap-1.5 font-mono text-sm font-bold ${colorClass}`}
+    >
+      <Clock className="w-4 h-4" />
+      {String(m).padStart(2, "0")}:{String(s).padStart(2, "0")}
     </div>
   )
 }
 
 function Inventory() {
-  const [stores, setStores] = useState<StoreType[]>([])
-  const [selectedStore, setSelectedStore] = useState<StoreType | null>(null)
-  const [products, setProducts] = useState<(ProductResponse & { stock?: number; category?: string; imageIndex?: number })[]>([])
-  const [filteredProducts, setFilteredProducts] = useState<(ProductResponse & { stock?: number; category?: string; imageIndex?: number })[]>([])
-  const [activeCategory, setActiveCategory] = useState("All")
-  const [isLoadingProducts, setIsLoadingProducts] = useState(false)
+  // Data states
+  const [stores, setStores] = useState<StoreResponse[]>([])
+  const [products, setProducts] = useState<
+    (ProductResponse & { imageIndex?: number })[]
+  >([])
   const [locks, setLocks] = useState<LockResponseItem[]>([])
-  const [isLoadingLocks, setIsLoadingLocks] = useState(false)
-  const [lockingId, setLockingId] = useState<number | null>(null)
-  const [selectedProductDetail, setSelectedProductDetail] = useState<(ProductResponse & { stock?: number; category?: string; imageIndex?: number }) | null>(null)
+
+  // UI states
+  const [searchQuery, setSearchQuery] = useState("")
+  const [activeStoreId, setActiveStoreId] = useState<number | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [notification, setNotification] = useState("")
-  const carouselRef = useRef<HTMLDivElement>(null)
+  const [lockingId, setLockingId] = useState<number | null>(null)
 
-  const earliestLock = locks.length > 0 ? locks.reduce((prev, curr) => {
-     return (new Date(prev.expires_at) < new Date(curr.expires_at)) ? prev : curr;
-  }) : null;
+  // Checkout flow
+  const [checkoutProduct, setCheckoutProduct] = useState<
+    (ProductResponse & { imageIndex?: number }) | null
+  >(null)
+  const [orderForm, setOrderForm] = useState<OrderCreate>({
+    product_id: 0,
+    quantity: 1,
+    full_name: "",
+    phone: "",
+    address: "",
+  })
+  const [orderResult, setOrderResult] = useState<OrderResponse | null>(null)
+  const [isOrdering, setIsOrdering] = useState(false)
 
-  const [headerTimer, setHeaderTimer] = useState<string | null>(null)
-  
-  useEffect(() => {
-     if (!earliestLock) {
-         setHeaderTimer(null);
-         return;
-     }
-     const interval = setInterval(() => {
-        const now = Date.now()
-        const exp = new Date(earliestLock.expires_at).getTime()
-        const diff = Math.max(0, Math.floor((exp - now) / 1000))
-        if (diff <= 0) {
-            setHeaderTimer("00:00");
-            clearInterval(interval);
-        } else {
-            const m = Math.floor(diff / 60)
-            const s = diff % 60
-            setHeaderTimer(`${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
-        }
-     }, 1000)
-     return () => clearInterval(interval)
-  }, [earliestLock])
-
-  const loadProducts = useCallback(async (storeId: number) => {
-    setIsLoadingProducts(true)
+  const loadData = useCallback(async () => {
+    setIsLoading(true)
     try {
-      const res = await InventoryAPI.getStoreProducts(storeId)
-      const enhanced = res.data.map((p, idx) => ({
-        ...p,
-        category: p.category || CATEGORIES[(idx % 2) + 1], // Fallback if no category
-        stock: p.stock ?? 0, // REAL stock from backend!
-        imageIndex: idx
-      }))
-      setProducts(enhanced)
-      setFilteredProducts(enhanced)
-      setActiveCategory("All")
-    } catch {
-      setProducts([])
-      setFilteredProducts([])
+      if (searchQuery.trim().length > 0) {
+        const res = await InventoryAPI.search(searchQuery)
+        setStores(res.data.stores)
+        setProducts(res.data.products.map((p, i) => ({ ...p, imageIndex: i })))
+        setActiveStoreId(null)
+      } else {
+        const storeRes = await InventoryAPI.getStores()
+        setStores(storeRes.data)
+        if (storeRes.data.length > 0) {
+          const firstStoreId = storeRes.data[0].store_id
+          setActiveStoreId(firstStoreId)
+          const prodRes = await InventoryAPI.getStoreProducts(firstStoreId)
+          setProducts(prodRes.data.map((p, i) => ({ ...p, imageIndex: i })))
+        }
+      }
+    } catch (e) {
+      console.error(e)
     } finally {
-      setIsLoadingProducts(false)
+      setIsLoading(false)
     }
-  }, [])
+  }, [searchQuery])
 
   useEffect(() => {
-    if (activeCategory === "All" || activeCategory === "Tất cả") {
-      setFilteredProducts(products)
-    } else {
-      setFilteredProducts(products.filter(p => p.category === activeCategory))
-    }
-  }, [activeCategory, products])
+    const delay = setTimeout(() => {
+      loadData()
+    }, 500)
+    return () => clearTimeout(delay)
+  }, [loadData])
 
   const loadLocks = useCallback(async () => {
-    setIsLoadingLocks(true)
     try {
       const res = await InventoryAPI.getMyLocks()
       setLocks(res.data)
-    } catch {
-      setLocks([])
-    } finally {
-      setIsLoadingLocks(false)
-    }
+    } catch (_e) {}
   }, [])
 
-  const handleLock = async (pid: number) => {
-    setLockingId(pid)
+  useEffect(() => {
+    loadLocks()
+  }, [loadLocks])
+
+  const handleStoreClick = async (storeId: number) => {
+    setActiveStoreId(storeId)
+    setSearchQuery("")
+    setIsLoading(true)
     try {
-      const res = await InventoryAPI.createLock(pid, 1)
-      setNotification(res.data.message)
+      const res = await InventoryAPI.getStoreProducts(storeId)
+      setProducts(res.data.map((p, i) => ({ ...p, imageIndex: i })))
+    } catch (_e) {
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleReserveClick = async (product: ProductResponse) => {
+    setLockingId(product.product_id)
+    try {
+      const res = await InventoryAPI.createLock(product.product_id, 1)
+      setNotification(`✅ ${res.data.message}`)
       loadLocks()
-      setTimeout(() => setNotification(""), 4000)
-    } catch (error) {
-      setNotification("Failed to lock. Please try again.")
-      setTimeout(() => setNotification(""), 4000)
+      // Open checkout modal
+      setCheckoutProduct(product)
+      setOrderForm({
+        ...orderForm,
+        product_id: product.product_id,
+        store_id: product.store_id,
+      })
+      setTimeout(() => setNotification(""), 3000)
+    } catch (err: any) {
+      setNotification(`❌ ${err.response?.data?.detail || "Lỗi giữ hàng"}`)
+      setTimeout(() => setNotification(""), 3000)
     } finally {
       setLockingId(null)
     }
   }
 
-  const handleReleaseExpired = async () => {
+  const handleFinalizeOrder = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsOrdering(true)
     try {
-      const res = await InventoryAPI.triggerRelease()
-      setNotification(res.data.message)
+      const res = await InventoryAPI.createOrder(orderForm)
+      setOrderResult(res.data)
       loadLocks()
-      setTimeout(() => setNotification(""), 4000)
-    } catch {
-      setNotification("Failed to release expired locks.")
+    } catch (err: any) {
+      setNotification(`❌ ${err.response?.data?.detail || "Lỗi tạo đơn"}`)
+      setTimeout(() => setNotification(""), 3000)
+    } finally {
+      setIsOrdering(false)
     }
   }
 
-  useEffect(() => {
-    const fetchStores = async () => {
-      try {
-        const res = await InventoryAPI.getStores()
-        if (res.data && res.data.length > 0) {
-          const realStores: StoreType[] = res.data.map((s, idx) => ({
-            id: s.store_id || idx,
-            name: s.name,
-            address: s.address || "Location pending",
-            image: STORE_IMAGES[idx % STORE_IMAGES.length],
-            status: "open",
-            isOpen: true,
-          }))
-          setStores(realStores)
-          setSelectedStore(realStores[0])
-          loadProducts(realStores[0].id)
-        } else {
-          const fallbackStore: StoreType = {
-            id: 1,
-            name: "AEGIS Hub",
-            address: "Waiting for database",
-            image: STORE_IMAGES[0],
-            status: "closed",
-            isOpen: true,
-          }
-          setStores([fallbackStore])
-          setSelectedStore(fallbackStore)
-        }
-      } catch (err) {
-        console.error("Failed to fetch stores:", err)
-      }
-    }
-    fetchStores()
-  }, [loadProducts])
-
-  useEffect(() => {
-    if (isCartOpen) loadLocks()
-  }, [isCartOpen, loadLocks])
-
-  const scrollCarousel = (direction: "left" | "right") => {
-    if (carouselRef.current) {
-      const scrollAmount = 350
-      carouselRef.current.scrollBy({ left: direction === "left" ? -scrollAmount : scrollAmount, behavior: "smooth" })
-    }
+  const closeCheckout = () => {
+    setCheckoutProduct(null)
+    setOrderResult(null)
   }
 
   return (
-    <div className="relative min-h-screen w-full overflow-x-hidden bg-zinc-950 font-sans text-zinc-300">
-      {/* Ambient background glow (Emerald/Cyan blur) */}
-      <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
-         <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-emerald-500/15 rounded-full blur-[140px] mix-blend-screen" />
-         <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-cyan-500/10 rounded-full blur-[140px] mix-blend-screen" />
-      </div>
+    <div className="min-h-screen bg-zinc-950 text-zinc-200 selection:bg-amber-500/30 font-sans pb-20">
+      {/* 1. STICKY HEADER & SEARCH */}
+      <header className="sticky top-0 z-40 bg-zinc-950/80 backdrop-blur-xl border-b border-white/5 shadow-2xl">
+        <div className="max-w-[1600px] mx-auto px-6 h-20 flex items-center justify-between gap-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-zinc-950">
+              <PackageOpen className="w-5 h-5" />
+            </div>
+            <h1 className="text-xl font-bold tracking-tight text-white hidden md:block">
+              O2O Market
+            </h1>
+          </div>
 
-      <div className="relative z-10 w-full max-w-[1400px] mx-auto px-6 py-10 md:py-16 space-y-12">
-        {/* Header */}
-        <header className="flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-zinc-900/80 border border-white/10 flex items-center justify-center shadow-inner">
-              <PackageOpen className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-white">
-                Redis Lock
-              </h1>
-              <p className="text-sm font-mono text-zinc-400 tracking-wide mt-1">Premium Shopping & Tourism</p>
-            </div>
+          <div className="flex-1 max-w-2xl relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search hubs, brands, apparels..."
+              className="w-full bg-zinc-900/50 border-white/10 h-12 pl-12 rounded-2xl text-white placeholder:text-zinc-500 focus-visible:ring-amber-500/50 focus-visible:border-amber-500/50 transition-all text-base"
+            />
+            {isLoading && (
+              <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-500 animate-spin" />
+            )}
           </div>
 
           <button
             onClick={() => setIsCartOpen(true)}
-            className="group relative flex items-center gap-4 px-5 py-3 rounded-2xl bg-zinc-900/40 backdrop-blur-md border border-white/10 hover:border-emerald-500/50 transition-all duration-300 shadow-[0_4px_30px_rgba(0,0,0,0.1)] hover:shadow-[0_0_20px_rgba(16,185,129,0.3)]"
+            className="relative p-3 rounded-xl hover:bg-zinc-800 transition-colors"
           >
-             <div className="relative flex items-center gap-2 text-white">
-                <ShoppingCart className="w-5 h-5 group-hover:text-emerald-400 transition-colors" />
-                <span className="font-semibold tracking-wide">My Cart</span>
-             </div>
-             
-             {locks.length > 0 && (
-                 <div className="flex items-center gap-2 pl-3 border-l border-white/10">
-                     <span className="bg-emerald-500 text-zinc-950 px-2 py-0.5 rounded-full text-xs font-bold animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.5)]">
-                         {locks.length}
-                     </span>
-                     {headerTimer && (
-                         <span className="text-sm font-mono text-emerald-400 font-bold">{headerTimer}</span>
-                     )}
-                 </div>
-             )}
+            <ShoppingCart className="w-6 h-6 text-zinc-300 hover:text-white" />
+            {locks.length > 0 && (
+              <span className="absolute top-1 right-1 w-5 h-5 rounded-full bg-amber-500 text-zinc-950 text-[10px] font-bold flex items-center justify-center shadow-[0_0_15px_rgba(245,158,11,0.5)]">
+                {locks.length}
+              </span>
+            )}
           </button>
-        </header>
+        </div>
+      </header>
 
-        {/* Notification Toast */}
-        {notification && (
-          <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-zinc-900/90 backdrop-blur-xl border border-emerald-500/50 rounded-full px-6 py-3 flex items-center gap-3 shadow-[0_10px_40px_rgba(0,0,0,0.5)] animate-slide-down">
-            <Zap className="w-4 h-4 text-emerald-400" />
-            <p className="text-sm font-medium text-white">{notification}</p>
-          </div>
-        )}
+      {/* NOTIFICATION */}
+      {notification && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 bg-zinc-900 border border-white/10 rounded-full px-6 py-3 shadow-2xl flex items-center gap-2 animate-in slide-in-from-top-4">
+          <span className="text-sm font-medium">{notification}</span>
+        </div>
+      )}
 
-        {/* 1. HUB LOCATOR */}
-        <section className="space-y-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Store className="w-5 h-5 text-emerald-400" />
-              <h2 className="text-sm font-bold text-white tracking-wider uppercase">Select Hub</h2>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => scrollCarousel("left")} className="p-2.5 rounded-full bg-zinc-900/40 backdrop-blur-md border border-white/10 hover:border-emerald-500/50 text-white transition-all">
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button onClick={() => scrollCarousel("right")} className="p-2.5 rounded-full bg-zinc-900/40 backdrop-blur-md border border-white/10 hover:border-emerald-500/50 text-white transition-all">
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-          
-          <div
-            ref={carouselRef}
-            className="flex overflow-x-auto gap-6 pb-6 scrollbar-hide snap-x snap-mandatory"
-            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
-          >
-            {stores.map((store) => {
-              const isActive = selectedStore?.id === store.id;
+      <main className="max-w-[1600px] mx-auto px-6 py-8 flex flex-col lg:flex-row gap-8">
+        {/* 2. LEFT COL: HUB LIST */}
+        <aside className="w-full lg:w-[350px] shrink-0 space-y-4">
+          <h2 className="text-sm font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2 mb-6">
+            <Store className="w-4 h-4" /> Nearby Hubs
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
+            {stores.map((store, idx) => {
+              const isActive = activeStoreId === store.store_id
               return (
                 <div
-                  key={store.id}
-                  onClick={() => {
-                    setSelectedStore(store)
-                    loadProducts(store.id)
-                  }}
-                  className={`relative flex-shrink-0 w-[340px] h-[200px] snap-start rounded-3xl transition-all duration-500 cursor-pointer overflow-hidden group bg-zinc-900/40 backdrop-blur-xl border
-                    ${isActive ? "border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.3)] scale-[1.02]" : "border-white/10 hover:border-white/20"}`}
+                  key={store.store_id}
+                  onClick={() => handleStoreClick(store.store_id)}
+                  className={`group flex items-center gap-4 p-3 rounded-2xl cursor-pointer transition-all duration-300 border bg-zinc-900/30 ${isActive ? "border-amber-500/50 bg-amber-500/5 shadow-[0_0_30px_rgba(245,158,11,0.1)]" : "border-white/5 hover:border-white/20 hover:bg-zinc-800/50"}`}
                 >
-                  <img src={store.image} alt={store.name} className={`absolute inset-0 w-full h-full object-cover transition-transform duration-700 ${isActive ? "scale-105" : "group-hover:scale-105"}`} />
-                  <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent opacity-90" />
-                  
-                  <div className="absolute bottom-0 w-full p-6">
-                    <div className="flex justify-between items-end">
-                       <div>
-                          <h3 className="font-bold text-white text-xl tracking-wide mb-1">{store.name}</h3>
-                          <p className="text-xs text-zinc-300 flex items-center gap-1.5 line-clamp-1"><MapPin className="w-3 h-3 text-emerald-400" /> {store.address}</p>
-                       </div>
-                       {store.isOpen && (
-                          <div className="relative flex items-center justify-center w-3 h-3 mb-1 mr-1">
-                             <span className="absolute w-full h-full rounded-full bg-emerald-500 animate-ping opacity-75"></span>
-                             <span className="relative w-2 h-2 rounded-full bg-emerald-400"></span>
-                          </div>
-                       )}
-                    </div>
+                  <img
+                    src={STORE_IMAGES[idx % STORE_IMAGES.length]}
+                    alt={store.name}
+                    className="w-20 h-20 rounded-xl object-cover"
+                  />
+                  <div className="flex-1 overflow-hidden">
+                    <h3
+                      className={`font-bold text-base truncate transition-colors ${isActive ? "text-amber-400" : "text-white"}`}
+                    >
+                      {store.name}
+                    </h3>
+                    <p className="text-xs text-zinc-500 truncate flex items-center gap-1 mt-1">
+                      <MapPin className="w-3 h-3" />
+                      {store.address || "Location pending"}
+                    </p>
+                    <p className="text-xs text-zinc-400 mt-1.5 flex items-center gap-1 font-medium">
+                      ⭐ {store.rating || 4.5}{" "}
+                      <span className="text-zinc-600">
+                        ({Math.floor(Math.random() * 100 + 20)})
+                      </span>
+                    </p>
                   </div>
                 </div>
               )
             })}
           </div>
-        </section>
+        </aside>
 
-        {/* 2. PRODUCT GRID & FILTERS */}
-        {selectedStore && (
-          <section className="space-y-8 animate-fade-in-up">
-            <div className="flex flex-wrap gap-3">
-              {CATEGORIES.filter(c => ["All", "Apparel", "Souvenirs"].includes(c)).map(cat => (
-                <button
-                  key={cat}
-                  onClick={() => setActiveCategory(cat)}
-                  className={`px-6 py-2.5 rounded-full text-sm font-semibold tracking-wide transition-all duration-300 border
-                    ${activeCategory === cat 
-                      ? "bg-white text-zinc-950 border-white shadow-[0_4px_15px_rgba(255,255,255,0.15)]" 
-                      : "bg-zinc-900/40 backdrop-blur-md text-zinc-400 border-white/10 hover:border-white/30 hover:text-white"}`}
-                >
-                  {cat}
-                </button>
+        {/* 3. RIGHT COL: PRODUCT GRID */}
+        <section className="flex-1">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+              <ScanLine className="w-6 h-6 text-amber-500" />
+              {searchQuery ? "Search Results" : "Inventory Catalog"}
+            </h2>
+          </div>
+
+          {isLoading ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
+              {[1, 2, 3, 4].map((i) => (
+                <div
+                  key={i}
+                  className="h-80 bg-zinc-900/50 rounded-3xl animate-pulse"
+                />
               ))}
             </div>
+          ) : products.length === 0 ? (
+            <div className="h-80 flex flex-col items-center justify-center border border-dashed border-zinc-800 rounded-3xl">
+              <Package className="w-12 h-12 text-zinc-700 mb-2" />
+              <p className="text-zinc-500">No products found.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
+              {products.map((p) => {
+                const img =
+                  p.image_url ||
+                  PRODUCT_IMAGES[(p.imageIndex || 0) % PRODUCT_IMAGES.length]
+                const stock = p.stock ?? 0
+                const isOut = stock === 0
+                return (
+                  <div
+                    key={p.product_id}
+                    className={`group bg-zinc-900/40 rounded-3xl overflow-hidden border transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl flex flex-col ${isOut ? "border-zinc-800 opacity-60" : "border-white/5 hover:border-amber-500/30"}`}
+                  >
+                    {/* Image Box */}
+                    <div className="relative aspect-[4/5] overflow-hidden bg-zinc-950">
+                      <img
+                        src={img}
+                        alt={p.name}
+                        onError={(e) =>
+                          (e.currentTarget.src = PRODUCT_IMAGES[0])
+                        }
+                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-transparent to-transparent opacity-80" />
 
-            {isLoadingProducts ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {[1, 2, 3, 4].map(i => <div key={i} className="h-[400px] rounded-2xl bg-zinc-900/40 backdrop-blur-md animate-pulse border border-white/10" />)}
-              </div>
-            ) : filteredProducts.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 stagger-children">
-                {filteredProducts.map((p) => {
-                  const imageIdx = p.imageIndex !== undefined ? p.imageIndex : Math.floor(Math.random() * PRODUCT_IMAGES.length);
-                  return (
-                    <ProductCard
-                      key={p.product_id}
-                      product={p}
-                      imageUrl={PRODUCT_IMAGES[imageIdx % PRODUCT_IMAGES.length]}
-                      onLock={handleLock}
-                      isLocking={lockingId === p.product_id}
-                      onClick={() => setSelectedProductDetail(p)}
-                    />
-                  )
-                })}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-32 rounded-3xl border border-white/10 bg-zinc-900/40 backdrop-blur-md">
-                <Package className="w-12 h-12 text-zinc-600 mb-4" />
-                <p className="text-zinc-400 text-sm">No items found in this category.</p>
-              </div>
-            )}
-          </section>
-        )}
-      </div>
+                      {/* Badges */}
+                      <div className="absolute top-3 left-3 flex flex-col gap-2">
+                        {stock > 0 && stock <= 5 && (
+                          <span className="bg-red-500/90 text-white text-[10px] font-bold px-2 py-1 rounded-md uppercase tracking-wider backdrop-blur-md">
+                            Almost Gone
+                          </span>
+                        )}
+                      </div>
+                    </div>
 
-      {/* 3. SIDEBAR CART */}
-      {isCartOpen && (
-        <div className="fixed inset-0 z-[200] flex justify-end">
-          <div className="absolute inset-0 bg-zinc-950/60 backdrop-blur-md transition-opacity" onClick={() => setIsCartOpen(false)} />
-          <div className="relative w-full max-w-md h-full bg-zinc-950/95 backdrop-blur-2xl border-l border-white/10 shadow-2xl animate-slide-in-right flex flex-col">
-            <div className="p-6 border-b border-white/10 flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                   <Lock className="w-5 h-5" />
+                    {/* Info */}
+                    <div className="p-5 flex flex-col flex-1 justify-between bg-gradient-to-b from-zinc-900/80 to-zinc-950">
+                      <div>
+                        <h3 className="text-sm font-bold text-white line-clamp-2 leading-snug mb-2 group-hover:text-amber-400 transition-colors">
+                          {p.name}
+                        </h3>
+                        <div className="text-lg font-mono font-bold text-zinc-100">
+                          {p.price.toLocaleString("vi-VN")} đ
+                        </div>
+                      </div>
+
+                      <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold mb-1">
+                            Stock
+                          </span>
+                          <span
+                            className={`text-xs font-mono font-bold ${isOut ? "text-zinc-600" : "text-emerald-400"}`}
+                          >
+                            {stock} left
+                          </span>
+                        </div>
+                        <button
+                          disabled={isOut || lockingId === p.product_id}
+                          onClick={() => handleReserveClick(p)}
+                          className="bg-zinc-800 hover:bg-amber-500 text-zinc-300 hover:text-zinc-950 w-10 h-10 rounded-full flex items-center justify-center transition-all disabled:opacity-50"
+                        >
+                          {lockingId === p.product_id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Lock className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+      </main>
+
+      {/* 4. CHECKOUT OVERLAY (VietQR) */}
+      <Dialog
+        open={!!checkoutProduct}
+        onOpenChange={(open) => !open && closeCheckout()}
+      >
+        <DialogContent className="max-w-[900px] p-0 bg-zinc-950/90 backdrop-blur-2xl border-white/10 shadow-2xl overflow-hidden">
+          {checkoutProduct && (
+            <div className="flex flex-col md:flex-row h-full md:h-[600px]">
+              {/* Left: Product Recap */}
+              <div className="w-full md:w-[400px] bg-zinc-900 p-8 flex flex-col justify-between border-r border-white/5">
+                <div>
+                  <h2 className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-6">
+                    Order Summary
+                  </h2>
+                  <img
+                    src={
+                      checkoutProduct.image_url ||
+                      PRODUCT_IMAGES[(checkoutProduct.imageIndex || 0) % 2]
+                    }
+                    onError={(e) => (e.currentTarget.src = PRODUCT_IMAGES[0])}
+                    className="w-full h-48 object-cover rounded-2xl mb-6 shadow-xl"
+                  />
+                  <h3 className="text-xl font-bold text-white mb-2">
+                    {checkoutProduct.name}
+                  </h3>
+                  <p className="text-3xl font-mono font-bold text-zinc-200 mb-6">
+                    {checkoutProduct.price.toLocaleString("vi-VN")} đ
+                  </p>
+
+                  <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                    <Clock className="w-5 h-5 text-amber-500" />
+                    <p className="text-sm text-amber-500/90 leading-relaxed font-medium">
+                      Item is locked for 15 minutes. Please complete your
+                      checkout.
+                    </p>
+                  </div>
                 </div>
-                <h2 className="text-xl font-semibold text-white">Active Locks</h2>
-                <span className="bg-white/10 text-white text-xs px-2.5 py-1 rounded-full font-mono font-bold">{locks.length}</span>
               </div>
-              <button onClick={() => setIsCartOpen(false)} className="p-2 hover:bg-white/10 rounded-full text-zinc-400 hover:text-white transition-colors">
+
+              {/* Right: Payment & Form */}
+              <div className="flex-1 p-8 overflow-y-auto">
+                {orderResult ? (
+                  // SUCCESS & VIETQR
+                  <div className="flex flex-col items-center text-center h-full justify-center animate-in zoom-in-95 duration-500">
+                    <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6">
+                      <CheckCircle2 className="w-8 h-8 text-emerald-500" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-white mb-2">
+                      Order Confirmed!
+                    </h2>
+                    <p className="text-zinc-400 mb-8 font-mono">
+                      Code:{" "}
+                      <span className="text-white font-bold">
+                        {orderResult.order_code}
+                      </span>
+                    </p>
+
+                    <div className="p-4 bg-white rounded-2xl shadow-2xl mb-6">
+                      <img
+                        src={orderResult.vietqr_url}
+                        alt="VietQR"
+                        className="w-48 h-48 object-contain"
+                      />
+                    </div>
+                    <p className="text-sm text-zinc-500 max-w-xs">
+                      Scan with any banking app to complete payment. Your order
+                      will be shipped soon.
+                    </p>
+
+                    <button
+                      onClick={closeCheckout}
+                      className="mt-8 px-8 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-xl font-bold text-white transition-colors"
+                    >
+                      Continue Shopping
+                    </button>
+                  </div>
+                ) : (
+                  // FORM
+                  <form
+                    onSubmit={handleFinalizeOrder}
+                    className="flex flex-col h-full"
+                  >
+                    <h2 className="text-2xl font-bold text-white mb-8 flex items-center gap-2">
+                      <CreditCard className="w-6 h-6 text-amber-500" /> Shipping
+                      Details
+                    </h2>
+
+                    <div className="space-y-5 flex-1">
+                      <div>
+                        <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-2">
+                          Full Name
+                        </label>
+                        <Input
+                          required
+                          value={orderForm.full_name}
+                          onChange={(e) =>
+                            setOrderForm({
+                              ...orderForm,
+                              full_name: e.target.value,
+                            })
+                          }
+                          className="bg-zinc-900/50 border-white/10 text-white h-12 rounded-xl"
+                          placeholder="John Doe"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-2">
+                          Phone Number
+                        </label>
+                        <Input
+                          required
+                          type="tel"
+                          value={orderForm.phone}
+                          onChange={(e) =>
+                            setOrderForm({
+                              ...orderForm,
+                              phone: e.target.value,
+                            })
+                          }
+                          className="bg-zinc-900/50 border-white/10 text-white h-12 rounded-xl"
+                          placeholder="0912345678"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-zinc-400 uppercase tracking-widest mb-2">
+                          Delivery Address
+                        </label>
+                        <textarea
+                          required
+                          value={orderForm.address}
+                          onChange={(e) =>
+                            setOrderForm({
+                              ...orderForm,
+                              address: e.target.value,
+                            })
+                          }
+                          className="w-full bg-zinc-900/50 border border-white/10 text-white p-4 rounded-xl min-h-[100px] resize-none focus:outline-none focus:border-amber-500/50"
+                          placeholder="123 Main St..."
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      disabled={isOrdering}
+                      type="submit"
+                      className="w-full mt-8 py-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-zinc-950 font-bold text-lg flex items-center justify-center gap-2 shadow-[0_10px_30px_rgba(245,158,11,0.3)] transition-all disabled:opacity-50"
+                    >
+                      {isOrdering ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <Zap className="w-5 h-5" />
+                      )}
+                      {isOrdering ? "Processing..." : "Place Order via VietQR"}
+                    </button>
+                  </form>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 5. SIDEBAR CART */}
+      {isCartOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div
+            className="absolute inset-0 bg-zinc-950/80 backdrop-blur-sm"
+            onClick={() => setIsCartOpen(false)}
+          />
+          <div className="relative w-full max-w-md bg-zinc-900 border-l border-white/5 shadow-2xl flex flex-col animate-in slide-in-from-right">
+            <div className="p-6 border-b border-white/5 flex justify-between items-center bg-zinc-950">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <Lock className="w-5 h-5 text-amber-500" /> Active Locks (
+                {locks.length})
+              </h2>
+              <button
+                onClick={() => setIsCartOpen(false)}
+                className="p-2 hover:bg-white/10 rounded-full"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              {isLoadingLocks ? (
-                <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 text-emerald-400 animate-spin" /></div>
-              ) : locks.length > 0 ? (
-                locks.map(lock => (
-                  <div key={lock.id} className="group relative p-5 rounded-2xl bg-zinc-900/40 backdrop-blur-md border border-white/10 hover:border-emerald-500/30 transition-all">
-                    <div className="flex justify-between items-start mb-4">
+              {locks.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-zinc-500">
+                  <ShoppingCart className="w-16 h-16 mb-4 opacity-50" />
+                  <p>No active reservations.</p>
+                </div>
+              ) : (
+                locks.map((lock) => (
+                  <div
+                    key={lock.id}
+                    className="p-4 rounded-2xl bg-zinc-950 border border-white/5"
+                  >
+                    <div className="flex justify-between items-start mb-3">
                       <div>
-                        <p className="text-white font-semibold mb-1">Product #{lock.product_id}</p>
-                        <p className="text-xs font-mono text-zinc-400">ID: {lock.id} • QTY: {lock.quantity}</p>
+                        <p className="text-white font-bold mb-1">
+                          Product #{lock.product_id}
+                        </p>
+                        <p className="text-xs text-zinc-500 font-mono">
+                          Qty: {lock.quantity} • Lock: {lock.id}
+                        </p>
                       </div>
-                      <span className={`text-[10px] px-2.5 py-1 rounded-md font-mono uppercase font-bold tracking-wider ${lock.status === "active" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"}`}>
-                        {lock.status}
-                      </span>
+                      <CountdownTimer
+                        expiresAt={lock.expires_at}
+                        ttlSeconds={lock.ttl_seconds}
+                      />
                     </div>
-                    <CountdownTimer expiresAt={lock.expires_at} ttlSeconds={lock.ttl_seconds} />
                   </div>
                 ))
-              ) : (
-                <div className="text-center flex flex-col items-center justify-center h-full opacity-60">
-                  <ShoppingBag className="w-20 h-20 text-zinc-600 mb-6" />
-                  <p className="text-zinc-300 font-semibold mb-2">Your lock is empty</p>
-                  <p className="text-sm text-zinc-500 max-w-[250px] text-center mx-auto">Items you reserve will appear here until their timer expires.</p>
-                </div>
               )}
-            </div>
-            
-            <div className="p-6 border-t border-white/10 bg-zinc-900/20">
-              <button
-                onClick={handleReleaseExpired}
-                className="w-full py-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-white/5 text-white text-sm font-semibold flex items-center justify-center gap-2 transition-all"
-              >
-                <AlertTriangle className="w-4 h-4" /> Sweep Expired
-              </button>
             </div>
           </div>
         </div>
       )}
-
-            {/* 4. PRODUCT DETAIL MODAL */}
-      <Dialog open={!!selectedProductDetail} onOpenChange={(open) => !open && setSelectedProductDetail(null)}>
-        <DialogContent className="max-w-[800px] p-0 overflow-hidden bg-zinc-950/80 backdrop-blur-2xl border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.8)]">
-          {selectedProductDetail && (() => {
-            const product = selectedProductDetail;
-            const imageUrl = product.image_url || PRODUCT_IMAGES[(product.imageIndex ?? 0) % PRODUCT_IMAGES.length];
-            const stock = product.stock ?? 0;
-            const stockLevel = stock === 0 ? "out" : stock <= 5 ? "low" : stock <= 15 ? "medium" : "high";
-            const stockColor = stockLevel === "out" ? "bg-zinc-600" : stockLevel === "low" ? "bg-red-500" : stockLevel === "medium" ? "bg-yellow-400" : "bg-emerald-400";
-            return (
-              <div className="flex flex-col md:flex-row h-[500px]">
-                {/* Left: Image */}
-                <div className="w-full md:w-1/2 relative h-full bg-zinc-800">
-                  <img src={imageUrl} alt={product.name} className={`w-full h-full object-cover ${stockLevel === 'out' ? 'grayscale-[50%]' : ''}`} />
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent to-zinc-950/90" />
-                  {product.category && (
-                    <div className="absolute top-4 left-4 bg-zinc-950/60 backdrop-blur-md px-3 py-1.5 rounded-md text-[10px] font-mono text-white uppercase tracking-widest border border-white/10">
-                      {product.category}
-                    </div>
-                  )}
-                </div>
-                {/* Right: Details */}
-                <div className="w-full md:w-1/2 p-8 flex flex-col justify-between">
-                  <div>
-                    <h2 className="text-2xl font-bold text-white mb-2">{product.name}</h2>
-                    <div className="flex items-center gap-1 text-emerald-400 mb-6">
-                      <DollarSign className="w-6 h-6" />
-                      <span className="text-3xl font-bold font-mono tracking-tight">{product.price.toLocaleString()}</span>
-                    </div>
-                    <p className="text-zinc-400 text-sm leading-relaxed mb-6 font-mono">
-                      {product.description || "Một sản phẩm cao cấp độc quyền từ mạng lưới AEGIS O2O. Thiết kế tinh xảo, chất lượng vượt trội, phù hợp cho những bộ sưu tập đẳng cấp."}
-                    </p>
-                    
-                    <div className="mb-6">
-                      <div className="flex justify-between items-center mb-2">
-                         <span className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">Tồn kho trực tuyến (Real-time)</span>
-                         <span className="text-sm font-mono font-bold text-zinc-200">{stock} items</span>
-                      </div>
-                      <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
-                         <div className={`h-full rounded-full transition-all duration-1000 ${stockColor} ${stock > 0 ? 'animate-pulse' : ''}`} style={{ width: `${Math.min((stock / 50) * 100, 100)}%` }} />
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => { handleLock(product.product_id); setSelectedProductDetail(null); }}
-                    disabled={lockingId === product.product_id || stock === 0}
-                    className="w-full py-4 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] disabled:opacity-50 disabled:from-zinc-600 disabled:to-zinc-600 disabled:shadow-none"
-                  >
-                    {lockingId === product.product_id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Lock className="w-5 h-5" />}
-                    {lockingId === product.product_id ? "ĐANG KHÓA HÀNG..." : "🔒 KHÓA HÀNG (REDIS)"}
-                  </button>
-                </div>
-              </div>
-            )
-          })()}
-        </DialogContent>
-      </Dialog>
-
-      <style>{`
-        @keyframes fadeInUp {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes slideDown {
-          from { opacity: 0; transform: translate(-50%, -20px); }
-          to { opacity: 1; transform: translate(-50%, 0); }
-        }
-        @keyframes slideInRight {
-          from { transform: translateX(100%); }
-          to { transform: translateX(0); }
-        }
-        .animate-fade-in-up { animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-        .animate-slide-down { animation: slideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-        .animate-slide-in-right { animation: slideInRight 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .stagger-children > * { animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; }
-        .stagger-children > *:nth-child(1) { animation-delay: 0.05s; }
-        .stagger-children > *:nth-child(2) { animation-delay: 0.1s; }
-        .stagger-children > *:nth-child(3) { animation-delay: 0.15s; }
-        .stagger-children > *:nth-child(4) { animation-delay: 0.2s; }
-        .stagger-children > *:nth-child(5) { animation-delay: 0.25s; }
-        .stagger-children > *:nth-child(6) { animation-delay: 0.3s; }
-        .stagger-children > *:nth-child(7) { animation-delay: 0.35s; }
-        .stagger-children > *:nth-child(8) { animation-delay: 0.4s; }
-      `}</style>
     </div>
   )
 }

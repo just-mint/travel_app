@@ -1,12 +1,23 @@
 import { zodResolver } from "@hookform/resolvers/zod"
-import { createFileRoute, Link as RouterLink, redirect } from "@tanstack/react-router"
+import {
+  createFileRoute,
+  Link as RouterLink,
+  redirect,
+} from "@tanstack/react-router"
+import { ArrowRight, Fingerprint, Shield, Sparkles, Zap } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
-import { ArrowRight, Fingerprint, Sparkles, Shield, Zap } from "lucide-react"
-import { useState, useEffect, useMemo, useRef } from "react"
 
 import type { Body_login_login_access_token as AccessToken } from "@/client"
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { LoadingButton } from "@/components/ui/loading-button"
 import { PasswordInput } from "@/components/ui/password-input"
@@ -25,14 +36,19 @@ const GRID_COLS = 12
 
 const formSchema = z.object({
   username: z.email({ message: "Vui lòng nhập email hợp lệ" }),
-  password: z.string().min(1, { message: "Vui lòng nhập mật khẩu" }).min(8, { message: "Ít nhất 8 ký tự" }),
+  password: z
+    .string()
+    .min(1, { message: "Vui lòng nhập mật khẩu" })
+    .min(8, { message: "Ít nhất 8 ký tự" }),
 }) satisfies z.ZodType<AccessToken>
 
 type FormData = z.infer<typeof formSchema>
 
 export const Route = createFileRoute("/login")({
   component: Login,
-  beforeLoad: async () => { if (isLoggedIn()) throw redirect({ to: "/" }) },
+  beforeLoad: async () => {
+    if (isLoggedIn()) throw redirect({ to: "/" })
+  },
   head: () => ({ meta: [{ title: "AEGIS O2O | Premium Access" }] }),
 })
 
@@ -54,19 +70,22 @@ function Login() {
     BACKGROUND_IMAGES.forEach((src, idx) => {
       const img = new Image()
       img.src = src
-      img.decode().then(() => {
-        preloadedImages.current[idx] = img
-        loaded++
-        console.log(`✅ Decoded ${idx} - ${src.slice(0, 50)}`)
-        if (loaded === BACKGROUND_IMAGES.length) {
-          console.log("🎯 All images ready")
-          setIsReady(true)
-        }
-      }).catch((err) => {
-        console.error(`❌ Failed to decode ${idx}:`, err)
-        loaded++
-        if (loaded === BACKGROUND_IMAGES.length) setIsReady(true) // vẫn đánh dấu ready để fallback
-      })
+      img
+        .decode()
+        .then(() => {
+          preloadedImages.current[idx] = img
+          loaded++
+          console.log(`✅ Decoded ${idx} - ${src.slice(0, 50)}`)
+          if (loaded === BACKGROUND_IMAGES.length) {
+            console.log("🎯 All images ready")
+            setIsReady(true)
+          }
+        })
+        .catch((err) => {
+          console.error(`❌ Failed to decode ${idx}:`, err)
+          loaded++
+          if (loaded === BACKGROUND_IMAGES.length) setIsReady(true) // vẫn đánh dấu ready để fallback
+        })
     })
   }, [])
 
@@ -88,33 +107,40 @@ function Login() {
       // Đảm bảo ảnh đã decode (nếu chưa thì decode lại)
       const nextImg = preloadedImages.current[nextIndex]
       if (nextImg) {
-        Promise.resolve(nextImg.decode()).then(() => {
-          setBaseIndex(nextIndex)
-          // Chờ 2 frame để trình duyệt render
-          requestAnimationFrame(() => {
+        Promise.resolve(nextImg.decode())
+          .then(() => {
+            setBaseIndex(nextIndex)
+            // Chờ 2 frame để trình duyệt render
             requestAnimationFrame(() => {
-              setIsGridVisible(false)
-              // Cập nhật ảnh cho lần lưới kế tiếp
-              gridIndexRef.current = (gridIndexRef.current + 1) % BACKGROUND_IMAGES.length
-              setGridIndex(gridIndexRef.current)
-              console.log(`✅ Transition done. Next grid index = ${gridIndexRef.current}`)
+              requestAnimationFrame(() => {
+                setIsGridVisible(false)
+                // Cập nhật ảnh cho lần lưới kế tiếp
+                gridIndexRef.current =
+                  (gridIndexRef.current + 1) % BACKGROUND_IMAGES.length
+                setGridIndex(gridIndexRef.current)
+                console.log(
+                  `✅ Transition done. Next grid index = ${gridIndexRef.current}`,
+                )
+              })
             })
           })
-        }).catch(() => {
-          // Fallback: vẫn đổi ảnh
-          setBaseIndex(nextIndex)
-          requestAnimationFrame(() => {
-            setIsGridVisible(false)
-            gridIndexRef.current = (gridIndexRef.current + 1) % BACKGROUND_IMAGES.length
-            setGridIndex(gridIndexRef.current)
+          .catch(() => {
+            // Fallback: vẫn đổi ảnh
+            setBaseIndex(nextIndex)
+            requestAnimationFrame(() => {
+              setIsGridVisible(false)
+              gridIndexRef.current =
+                (gridIndexRef.current + 1) % BACKGROUND_IMAGES.length
+              setGridIndex(gridIndexRef.current)
+            })
           })
-        })
       } else {
         // Fallback khi ảnh chưa có trong preload (hiếm)
         setBaseIndex(nextIndex)
         requestAnimationFrame(() => {
           setIsGridVisible(false)
-          gridIndexRef.current = (gridIndexRef.current + 1) % BACKGROUND_IMAGES.length
+          gridIndexRef.current =
+            (gridIndexRef.current + 1) % BACKGROUND_IMAGES.length
           setGridIndex(gridIndexRef.current)
         })
       }
@@ -139,7 +165,7 @@ function Login() {
       if (intervalRef.current) clearInterval(intervalRef.current)
       if (transitionTimer.current) clearTimeout(transitionTimer.current)
     }
-  }, [isReady]) // performTransition phụ thuộc isReady nhưng isReady ổn định, ta có thể dùng ref để gọi
+  }, [isReady, performTransition]) // performTransition phụ thuộc isReady nhưng isReady ổn định, ta có thể dùng ref để gọi
 
   // Grid cells
   const gridCells = useMemo(() => {
@@ -148,8 +174,9 @@ function Login() {
       for (let c = 0; c < GRID_COLS; c++) {
         cells.push({
           id: `${r}-${c}`,
-          r, c,
-          delay: (r * 0.03 + c * 0.02),
+          r,
+          c,
+          delay: r * 0.03 + c * 0.02,
           tx: (Math.random() - 0.5) * 400,
           ty: (Math.random() - 0.5) * 400,
           rot: (Math.random() - 0.5) * 120,
@@ -172,15 +199,15 @@ function Login() {
 
   return (
     <div className="relative flex min-h-screen w-full font-sans bg-black overflow-hidden">
-
       {/* Hidden preload images for cache */}
       <div className="absolute w-0 h-0 opacity-0 overflow-hidden pointer-events-none">
-        {BACKGROUND_IMAGES.map(src => <img key={src} src={src} alt="" />)}
+        {BACKGROUND_IMAGES.map((src) => (
+          <img key={src} src={src} alt="" />
+        ))}
       </div>
 
       {/* ========== SHATTER ENGINE ========== */}
       <div className="absolute inset-0 z-0 w-full h-full bg-black">
-
         {/* BASE LAYER */}
         {BACKGROUND_IMAGES.map((src, index) => (
           <img
@@ -208,12 +235,14 @@ function Login() {
               <div
                 key={cell.id}
                 className="relative overflow-hidden will-change-transform"
-                style={{
-                  animation: `assembleIn 0.9s cubic-bezier(0.23, 1, 0.32, 1) ${cell.delay}s both`,
-                  '--tx': `${cell.tx}px`,
-                  '--ty': `${cell.ty}px`,
-                  '--rot': `${cell.rot}deg`
-                } as React.CSSProperties}
+                style={
+                  {
+                    animation: `assembleIn 0.9s cubic-bezier(0.23, 1, 0.32, 1) ${cell.delay}s both`,
+                    "--tx": `${cell.tx}px`,
+                    "--ty": `${cell.ty}px`,
+                    "--rot": `${cell.rot}deg`,
+                  } as React.CSSProperties
+                }
               >
                 <div
                   className="absolute w-[100vw] h-[100vh] bg-cover bg-center"
@@ -244,29 +273,36 @@ function Login() {
         <div className="animate-fade-in-up">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-md border border-white/20 shadow-lg mb-10">
             <Sparkles className="w-4 h-4 text-amber-300" />
-            <span className="text-xs font-bold text-white/90 tracking-[0.2em] uppercase">Giới hạn · 2025</span>
+            <span className="text-xs font-bold text-white/90 tracking-[0.2em] uppercase">
+              Giới hạn · 2025
+            </span>
           </div>
 
           <h1 className="text-6xl xl:text-7xl font-bold text-white mb-8 leading-[1.1] tracking-tight">
-            Kết nối<br />
+            Kết nối
+            <br />
             <span className="bg-gradient-to-r from-amber-200 via-emerald-300 to-cyan-400 bg-clip-text text-transparent">
               Tinh hoa & Nhịp sống
             </span>
           </h1>
 
           <p className="text-lg text-zinc-200/80 max-w-md leading-relaxed font-light mb-12 drop-shadow-md">
-            Nền tảng O2O thế hệ mới – nơi văn hóa gặp gỡ thương mại.
-            Trải nghiệm liền mạch, đặc quyền riêng biệt.
+            Nền tảng O2O thế hệ mới – nơi văn hóa gặp gỡ thương mại. Trải nghiệm
+            liền mạch, đặc quyền riêng biệt.
           </p>
 
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-3 text-white/70">
               <Shield className="w-5 h-5 text-emerald-400" />
-              <span className="text-sm font-medium">Bảo mật chuẩn ngân hàng</span>
+              <span className="text-sm font-medium">
+                Bảo mật chuẩn ngân hàng
+              </span>
             </div>
             <div className="flex items-center gap-3 text-white/70">
               <Zap className="w-5 h-5 text-amber-400" />
-              <span className="text-sm font-medium">Xác thực vân tay & Face ID</span>
+              <span className="text-sm font-medium">
+                Xác thực vân tay & Face ID
+              </span>
             </div>
           </div>
         </div>
@@ -275,62 +311,84 @@ function Login() {
       {/* ========== LOGIN PANEL ========== */}
       <div className="relative z-30 w-full lg:w-1/2 h-screen flex items-center justify-center lg:justify-end lg:pr-16 xl:pr-24 p-6">
         <div className="w-full max-w-[440px] p-8 rounded-3xl bg-white/5 backdrop-blur-2xl border border-white/20 shadow-2xl transition-all duration-500 hover:shadow-emerald-500/10">
-
           <div className="mb-8 text-center">
             <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-white to-gray-200 flex items-center justify-center shadow-[0_8px_20px_rgba(0,0,0,0.3)] mb-5">
               <Fingerprint className="w-7 h-7 text-gray-900" />
             </div>
-            <h2 className="text-2xl font-bold text-white tracking-tight">Chào mừng trở lại</h2>
-            <p className="text-sm text-white/50 mt-1">Đăng nhập để truy cập hệ sinh thái AEGIS</p>
+            <h2 className="text-2xl font-bold text-white tracking-tight">
+              Chào mừng trở lại
+            </h2>
+            <p className="text-sm text-white/50 mt-1">
+              Đăng nhập để truy cập hệ sinh thái AEGIS
+            </p>
           </div>
 
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-              <FormField control={form.control} name="username" render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-white/70 text-xs font-semibold tracking-wider uppercase">Email</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="admin@aegis.com"
-                      type="email"
-                      className="bg-black/30 border-white/15 text-white placeholder:text-white/30 focus:border-emerald-400/60 focus:ring-0 h-11 rounded-xl"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage className="text-rose-300 text-xs" />
-                </FormItem>
-              )} />
+              <FormField
+                control={form.control}
+                name="username"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-white/70 text-xs font-semibold tracking-wider uppercase">
+                      Email
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="admin@aegis.com"
+                        type="email"
+                        className="bg-black/30 border-white/15 text-white placeholder:text-white/30 focus:border-emerald-400/60 focus:ring-0 h-11 rounded-xl"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage className="text-rose-300 text-xs" />
+                  </FormItem>
+                )}
+              />
 
-              <FormField control={form.control} name="password" render={({ field }) => (
-                <FormItem>
-                  <div className="flex justify-between items-center">
-                    <FormLabel className="text-white/70 text-xs font-semibold tracking-wider uppercase">Mật khẩu</FormLabel>
-                    <RouterLink to="/recover-password" className="text-xs text-white/40 hover:text-white transition">
-                      Quên?
-                    </RouterLink>
-                  </div>
-                  <FormControl>
-                    <PasswordInput
-                      placeholder="••••••••"
-                      className="bg-black/30 border-white/15 text-white placeholder:text-white/30 focus:border-emerald-400/60 focus:ring-0 h-11 rounded-xl"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage className="text-rose-300 text-xs" />
-                </FormItem>
-              )} />
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <div className="flex justify-between items-center">
+                      <FormLabel className="text-white/70 text-xs font-semibold tracking-wider uppercase">
+                        Mật khẩu
+                      </FormLabel>
+                      <RouterLink
+                        to="/recover-password"
+                        className="text-xs text-white/40 hover:text-white transition"
+                      >
+                        Quên?
+                      </RouterLink>
+                    </div>
+                    <FormControl>
+                      <PasswordInput
+                        placeholder="••••••••"
+                        className="bg-black/30 border-white/15 text-white placeholder:text-white/30 focus:border-emerald-400/60 focus:ring-0 h-11 rounded-xl"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage className="text-rose-300 text-xs" />
+                  </FormItem>
+                )}
+              />
 
               <LoadingButton
                 type="submit"
                 loading={loginMutation.isPending}
                 className="w-full mt-6 h-11 bg-white text-gray-900 hover:bg-gray-100 font-semibold rounded-xl transition-all shadow-md hover:shadow-xl flex items-center justify-center gap-2 group"
               >
-                Đăng nhập <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition" />
+                Đăng nhập{" "}
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition" />
               </LoadingButton>
 
               <div className="text-center text-sm text-white/40 mt-6">
                 Chưa có tài khoản?{" "}
-                <RouterLink to="/signup" className="text-white hover:text-emerald-300 transition">
+                <RouterLink
+                  to="/signup"
+                  className="text-white hover:text-emerald-300 transition"
+                >
                   Đăng ký ngay
                 </RouterLink>
               </div>

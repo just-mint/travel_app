@@ -1,10 +1,13 @@
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-from app.domains.inventory.model import Product, InventoryLock, Store, Inventory
-from app.domains.inventory.schema import LockRequest
+from app.domains.inventory.model import Product, InventoryLock, Store, Inventory, Order
+from app.domains.inventory.schema import LockRequest, OrderCreate
 from redis.asyncio import Redis
 from datetime import datetime, timezone
 import logging
+import random
+import string
+import urllib.parse
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +52,40 @@ def get_products_by_store(db: Session, store_id: int):
         products.append(prod_dict)
     
     return products
+
+
+def search_stores_and_products(db: Session, query: str):
+    """
+    Tìm kiếm tổng hợp: Tìm Store hoặc Product theo keyword (ILIKE).
+    Trả về dict { stores: [...], products: [...] }.
+    """
+    keyword = f"%{query}%"
+    
+    stores = db.query(Store).filter(
+        Store.name.ilike(keyword)
+    ).limit(10).all()
+    
+    # Tìm product qua tên hoặc description
+    product_rows = db.query(Product, Inventory).join(
+        Inventory, Product.product_id == Inventory.product_id
+    ).filter(
+        Product.name.ilike(keyword)
+    ).limit(20).all()
+    
+    products = []
+    for prod, inv in product_rows:
+        products.append({
+            "product_id": prod.product_id,
+            "name": prod.name,
+            "price": prod.price,
+            "original_price": prod.original_price,
+            "description": prod.description,
+            "image_url": prod.image_url,
+            "stock": inv.stock,
+            "store_id": inv.store_id,
+        })
+    
+    return {"stores": stores, "products": products}
 
 
 def compare_product_prices(db: Session, product_id: int, current_store_id: int, lat: float = None, lon: float = None, radius: int = 5000):
@@ -194,3 +231,87 @@ def check_and_release_expired_locks(db: Session) -> int:
     db.commit()
     logger.info(f"[Sweep] Đã hoàn trả tồn kho cho {released_count} lock hết hạn")
     return released_count
+
+
+def _generate_order_code() -> str:
+    """Sinh mã đơn hàng 8 ký tự: AE + 6 chữ số ngẫu nhiên"""
+    return "AE" + "".join(random.choices(string.digits, k=6))
+
+
+def _build_vietqr_url(amount: int, order_code: str) -> str:
+    """Sinh URL ảnh VietQR chuẩn ngân hàng Việt Nam."""
+    bank_id = "970422"       # MB Bank (ví dụ)
+    account_no = "0123456789"  # Tài khoản demo
+    template = "compact2"
+    info = urllib.parse.quote(f"AEGIS {order_code}")
+    return f"https://img.vietqr.io/image/{bank_id}-{account_no}-{template}.png?amount={amount}&addInfo={info}&accountName=AEGIS%20O2O"
+
+
+async def finalize_order(db: Session, redis: Redis, data: OrderCreate, user_id: int):
+    """
+    Hoàn tất đơn hàng O2O:
+    1. Tìm product, tính tổng tiền
+    2. Xóa Redis lock (nếu có)
+    3. Trừ tồn kho vĩnh viễn trong PostgreSQL
+    4. Tạo Order record với trạng thái PENDING_SHIP
+    """
+    product = db.query(Product).filter(Product.product_id == data.product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Sản phẩm không tồn tại")
+
+    total_amount = int(product.price * data.quantity)
+    order_code = _generate_order_code()
+
+    # Xóa Redis lock
+    lock_key = f"lock:prod:{data.product_id}"
+    try:
+        await redis.delete(lock_key)
+    except Exception:
+        pass  # Non-critical
+
+    # Trừ tồn kho vĩnh viễn
+    inv_query = db.query(Inventory).filter(Inventory.product_id == data.product_id)
+    if data.store_id:
+        inv_query = inv_query.filter(Inventory.store_id == data.store_id)
+    inv = inv_query.with_for_update().first()
+    
+    if inv:
+        inv.stock = max(0, inv.stock - data.quantity)
+        inv.locked_stock = max(0, inv.locked_stock - data.quantity)
+    
+    # Đánh dấu lock cũ là completed
+    existing_lock = db.query(InventoryLock).filter(
+        InventoryLock.product_id == data.product_id,
+        InventoryLock.user_id == user_id,
+        InventoryLock.status == "soft_locked"
+    ).first()
+    if existing_lock:
+        existing_lock.status = "completed"
+
+    # Tạo Order
+    new_order = Order(
+        user_id=user_id,
+        product_id=data.product_id,
+        store_id=data.store_id,
+        quantity=data.quantity,
+        total_amount=total_amount,
+        full_name=data.full_name,
+        phone=data.phone,
+        address=data.address,
+        status="PENDING_SHIP",
+        order_code=order_code,
+    )
+    db.add(new_order)
+    db.commit()
+    db.refresh(new_order)
+
+    vietqr_url = _build_vietqr_url(total_amount, order_code)
+
+    return {
+        "order_id": new_order.order_id,
+        "order_code": new_order.order_code,
+        "status": new_order.status,
+        "total_amount": total_amount,
+        "product_name": product.name,
+        "vietqr_url": vietqr_url,
+    }

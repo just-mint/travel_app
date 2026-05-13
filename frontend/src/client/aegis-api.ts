@@ -212,6 +212,29 @@ export const SpatialAPI = {
 }
 
 // ===================== INVENTORY API =====================
+export interface OrderCreate {
+  product_id: number
+  store_id?: number
+  quantity: number
+  full_name: string
+  phone: string
+  address: string
+}
+
+export interface OrderResponse {
+  order_id: number
+  order_code: string
+  status: string
+  total_amount: number
+  product_name: string
+  vietqr_url: string
+}
+
+export interface SearchResult {
+  stores: StoreResponse[]
+  products: ProductResponse[]
+}
+
 export const InventoryAPI = {
   getStores: (place_id?: string) =>
     aegisClient.get<StoreResponse[]>("/inventory/stores", { params: { place_id } }),
@@ -221,6 +244,9 @@ export const InventoryAPI = {
 
   getStoreProducts: (storeId: number) =>
     aegisClient.get<ProductResponse[]>(`/inventory/stores/${storeId}/products`),
+
+  search: (q: string) =>
+    aegisClient.get<SearchResult>("/inventory/search", { params: { q } }),
 
   createLock: (product_id: number, quantity = 1) =>
     aegisClient.post<{ message: string; lock_id: number; expires_at: string }>(
@@ -238,6 +264,9 @@ export const InventoryAPI = {
     aegisClient.get<PriceComparison[]>(`/inventory/products/${productId}/compare`, {
       params: { store_id: storeId, lat, lon },
     }),
+
+  createOrder: (data: OrderCreate) =>
+    aegisClient.post<OrderResponse>("/inventory/orders", data),
 }
 
 export interface PriceComparison {
