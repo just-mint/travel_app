@@ -2,9 +2,9 @@ from sqlalchemy.orm import Session
 from app.domains.vision.model import VisionTask, VirtualCloset
 import uuid
 import logging
-import threading
 
 logger = logging.getLogger(__name__)
+
 
 def create_vision_task(db: Session, image_path: str):
     task_id = str(uuid.uuid4())
@@ -12,18 +12,28 @@ def create_vision_task(db: Session, image_path: str):
     db.add(new_task)
     db.commit()
     db.refresh(new_task)
+
+    # Dispatch qua Celery queue (RabbitMQ) thay vì threading.Thread
+    # Celery .delay() gửi message vào broker → worker nhận và xử lý bất đồng bộ
     try:
         from workers.ai_worker.vision_tasks import process_image
-        threading.Thread(target=process_image, args=(task_id, image_path)).start()
+        process_image.delay(task_id, image_path)
+        logger.info(f"[Vision] Đã gửi task {task_id} vào Celery queue (process_image)")
     except Exception as e:
-        logger.warning(f"Lỗi khi xử lý process_image bằng Thread: {e}")
+        # Nếu broker không khả dụng, đánh dấu task failed ngay để tránh treo mãi
+        logger.error(f"[Vision] Không thể dispatch task lên Celery: {e}")
+        new_task.status = "failed"
+        new_task.detected_objects = {"error": f"Celery broker unavailable: {str(e)}"}
+        db.commit()
+
     return new_task
+
 
 def get_vision_task(db: Session, task_id: str):
     return db.query(VisionTask).filter(VisionTask.task_id == task_id).first()
 
+
 def add_to_closet(db: Session, user_id: str, image_path: str):
-    # Khởi tạo None ngay lập tức, vì Vector thực sẽ được chạy ngầm bởi AI Celery
     new_item = VirtualCloset(
         user_id=user_id,
         image_path=image_path,
@@ -32,15 +42,19 @@ def add_to_closet(db: Session, user_id: str, image_path: str):
     db.add(new_item)
     db.commit()
     db.refresh(new_item)
-    
-    # Ném công việc nặng (AI Vision Embeddings) cho Background Worker
+
+    # Dispatch qua Celery queue thay vì threading.Thread
     try:
         from workers.ai_worker.vision_tasks import process_closet_image
-        threading.Thread(target=process_closet_image, args=(new_item.id, image_path)).start()
+        process_closet_image.delay(new_item.id, image_path)
+        logger.info(f"[Vision] Đã gửi closet item {new_item.id} vào Celery queue (process_closet_image)")
     except Exception as e:
-        logger.warning(f"Lỗi khi xử lý process_closet_image bằng Thread: {e}")
+        logger.error(f"[Vision] Không thể dispatch closet task lên Celery: {e}")
+        # Không fail hard ở đây — item đã lưu, embedding sẽ là None
+        # Worker có thể retry sau bằng Celery Beat nếu cần
 
     return new_item
+
 
 def get_user_closet(db: Session, user_id: str):
     return db.query(VirtualCloset).filter(VirtualCloset.user_id == user_id).all()
@@ -48,10 +62,8 @@ def get_user_closet(db: Session, user_id: str):
 
 def find_similar_products_for_closet(db: Session, closet_item_id: int, top_n: int = 5):
     """
-    Mix & Match API thật: Lấy vector 512D của closet item → tìm products 
+    Mix & Match API: Lấy vector 512D của closet item → tìm products
     có cosine similarity cao nhất bằng pgvector.
-    
-    Trả về list[dict] gồm product info + match_score (0-100%).
     """
     from app.domains.inventory.model import Product, Inventory
 
@@ -62,9 +74,6 @@ def find_similar_products_for_closet(db: Session, closet_item_id: int, top_n: in
     if closet_item.vector_embedding is None:
         return None, "Vector chưa được xử lý. Vui lòng chờ AI Worker hoàn tất."
 
-    # Query pgvector: cosine_distance trả về khoảng cách [0, 2]
-    # 0 = giống hoàn toàn, 2 = đối lập hoàn toàn
-    # Chỉ tìm products đã có embedding
     query = db.query(
         Product,
         Product.embedding.cosine_distance(closet_item.vector_embedding).label("distance")
@@ -78,15 +87,10 @@ def find_similar_products_for_closet(db: Session, closet_item_id: int, top_n: in
 
     matches = []
     for product, distance in results:
-        # Convert cosine distance → similarity percentage
-        # distance ∈ [0, 2] → similarity = (1 - distance/2) * 100
         similarity = round((1.0 - float(distance) / 2.0) * 100, 1)
-
-        # Lấy thông tin tồn kho
         inv = db.query(Inventory).filter(Inventory.product_id == product.product_id).first()
         stock = inv.stock if inv else 0
         store_id = inv.store_id if inv else None
-
         matches.append({
             "product_id": product.product_id,
             "name": product.name,
@@ -100,4 +104,3 @@ def find_similar_products_for_closet(db: Session, closet_item_id: int, top_n: in
         })
 
     return matches, None
-
